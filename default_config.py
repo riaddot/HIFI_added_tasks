@@ -23,7 +23,7 @@ class Datasets(object):
     JETS = 'jetimages'
 
 class DatasetPaths(object):
-    LFWPeople = '/home/bellelbn/DL/datasets/lfw'
+    LFWPeople = "../lfw" #'/home/bellelbn/DL/datasets/lfw'
     OPENIMAGES = 'data/openimages'
     CITYSCAPES = ''
     JETS = ''
@@ -39,7 +39,7 @@ class args(object):
     silent = True
     n_epochs = 8
     n_steps = 1e6
-    batch_size = 4
+    batch_size = 32
     log_interval = 1000
     save_interval = 50000
     gpu = 0
@@ -91,14 +91,10 @@ class args(object):
     use_latent_mixture_model = False
     mixture_components = 4
     latent_channels_DLMM = 64
-
-    # Additional Tasks
-    optimal_latent = False
-    pretrained = True
     
-    tasks = "HiFic"
-
-    checkpoint = "/home/bellelbn/DL/models/hific_high.pt"
+    default_task = "HiFiC"
+    image_dir = "../jpegai_test"
+    checkpoint = "../models/hific_hi.pt"
 
 """
 Specialized configs

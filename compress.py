@@ -118,6 +118,7 @@ def compress_and_decompress(args):
     args = utils.Struct(**loaded_args_d)
     # args = utils.setup_generic_signature(args, special_info=args.model_type)
     logger.info(loaded_args_d)
+    
 
     # Build probability tables
     logger.info('Building hyperprior probability tables...')
@@ -244,10 +245,7 @@ def main(**kwargs):
     parser.add_argument("-save", "--save", help="Save compressed format to disk.", action="store_true")
     parser.add_argument("-metrics", "--metrics", help="Evaluate compression metrics.", action="store_true")
 
-    parser.add_argument('-t', '--tasks', choices=['Zoom','FFX'], nargs='+', default=hific_args.tasks, help="Choose which task to add into the MTL framework")
-    parser.add_argument('-p', '--pretrained', type=int, default = hific_args.pretrained, help="Whether use or not pretrained model for additional task")
-    parser.add_argument('-ol', '--optimal_latent', type=int, default = hific_args.optimal_latent, help="Whether to freeze the reconstruction frame work for additional tasks")
-
+    parser.add_argument('-t', '--tasks', choices=['Zoom','FFX'], nargs='+', default=hific_args.default_task, help="Choose which task to add into the MTL framework")
 
     args = parser.parse_args()
 
