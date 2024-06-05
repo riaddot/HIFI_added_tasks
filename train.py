@@ -111,10 +111,11 @@ def load_generator(model,path):
     return model.load_state_dict(new_state_dict,strict=False)
 
 
-def train(args, model, train_loader, test_loader, device, logger, optimizers):
+def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, optimizers):
 
     start_time = time.time()
     test_loader_iter = iter(test_loader)
+    # jpeg_loader_iter = iter(jpeg_loader)
     current_D_steps, train_generator = 0, True
     best_loss, best_test_loss, mean_epoch_loss = np.inf, np.inf, np.inf     
     train_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'train'))
@@ -124,7 +125,6 @@ def train(args, model, train_loader, test_loader, device, logger, optimizers):
     amortization_opt, hyperlatent_likelihood_opt = optimizers['amort'], optimizers['hyper']
     if model.use_discriminator is True:
         disc_opt = optimizers['disc']
-
 
     for epoch in trange(args.n_epochs, desc='Epoch'):
 
@@ -183,9 +183,10 @@ def train(args, model, train_loader, test_loader, device, logger, optimizers):
                                 avg_bpp=bpp.mean().item(), logger=logger, writer=train_writer)
                 try:
                     test_data, test_bpp = next(test_loader_iter)
+                    # jpeg_test_data, jpeg_test_bpp = next(jpeg_loader_iter)
                 except StopIteration:
                     test_loader_iter = iter(test_loader)
-                    test_data, test_bpp = next((test_loader_iter))
+                    test_data, test_bpp = next(test_loader_iter)
 
                 best_test_loss, epoch_test_loss = test(args, model, epoch, idx, data, test_data, test_bpp, device, epoch_test_loss, storage_test,
                      best_test_loss, start_time, epoch_start_time, logger, train_writer, test_writer)
@@ -212,8 +213,12 @@ def train(args, model, train_loader, test_loader, device, logger, optimizers):
         mean_epoch_loss = np.mean(epoch_loss)
         mean_epoch_test_loss = np.mean(epoch_test_loss)
 
+        
         logger.info('===>> Epoch {} | Mean train loss: {:.3f} | Mean test loss: {:.3f}'.format(epoch, 
             mean_epoch_loss, mean_epoch_test_loss))    
+        
+        # logger.info('===>> Epoch {}\tSSIM Train: {:.3f}({:.3f})\tSSIM Test: {:.3f}({:.3f})'.format(epoch, 
+        #     1 - mean_epoch_loss, 1 - mean_epoch_test_loss))  
 
         if model.step_counter > args.n_steps:
             break
@@ -267,17 +272,12 @@ if __name__ == '__main__':
     arch_args.add_argument('-nrb', '--n_residual_blocks', type=int, default=hific_args.n_residual_blocks,
         help="Number of residual blocks to use in Generator.")
     
-    arch_args.add_argument('-t', '--tasks', choices=['Zoom','FFX'], nargs='+', default=hific_args.tasks, help="Choose which task to add into the MTL framework")
-    arch_args.add_argument('-p', '--pretrained', type=int, default = hific_args.pretrained, help="Whether use or not pretrained model for additional task")
-    arch_args.add_argument('-ol', '--optimal_latent', type=int, default = hific_args.optimal_latent, help="Whether to freeze the reconstruction frame work for additional tasks")
-    
-    # arch_args.add_argument('-pz', '--pretrainedz', type=int, default = hific_args.pretrained, help="Whether use or not pretrained model for additional task")
-    # arch_args.add_argument('-pf', '--pretrainedf', type=int, default = hific_args.pretrained, help="Whether use or not pretrained model for additional task")
+    arch_args.add_argument('-t', '--tasks', choices=['Zoom','FFX'], nargs='+', default=hific_args.default_task, help="Choose which task to add into the MTL framework")
 
     # Warmstart adversarial training from autoencoder/hyperprior
     warmstart_args = parser.add_argument_group("Warmstart options")
     warmstart_args.add_argument("-warmstart", "--warmstart", help="Warmstart adversarial training from autoencoder + hyperprior ckpt.", action="store_true")
-    warmstart_args.add_argument("--checkpoint", default=hific_args.checkpoint, help="Path to autoencoder + hyperprior ckpt.")
+    warmstart_args.add_argument("-ckpt", "--checkpoint", default=hific_args.checkpoint, help="Path to autoencoder + hyperprior ckpt.")
 
     cmd_args = parser.parse_args()
 
@@ -342,7 +342,6 @@ if __name__ == '__main__':
     logger.info('MODEL TYPE: {}'.format(args.model_type))
     logger.info('MODEL MODE: {}'.format(args.model_mode))
     logger.info('TASKS: {}'.format(args.tasks))
-    logger.info('PRETRAINED: {}'.format(args.pretrained))
     logger.info('BITRATE REGIME: {}'.format(args.regime))
     logger.info('SAVING LOGS/CHECKPOINTS/RECORDS TO {}'.format(args.snapshot))
     logger.info('USING DEVICE {}'.format(device))
@@ -365,14 +364,22 @@ if __name__ == '__main__':
                                 shuffle=True,
                                 normalize=args.normalize_input_image)
 
+
+    jpeg_loader = datasets.get_dataloaders('evaluation', root=args.image_dir, batch_size=args.batch_size,
+                                           logger=logger, shuffle=False, normalize=args.normalize_input_image)
+
+
     args.n_data = len(train_loader.dataset)
     args.image_dims = train_loader.dataset.image_dims
+    logger.info("=" * 50)
     logger.info('Training elements: {}'.format(args.n_data))
     logger.info('Testing elements: {}'.format(len(test_loader.dataset)))
+    logger.info('JPEGAI elements: {}'.format(len(jpeg_loader.dataset)))
     logger.info('Input Dimensions: {}'.format(args.image_dims))
     logger.info('Batch size: {}'.format(args.batch_size))
     logger.info('Optimizers: {}'.format(optimizers))
     logger.info('Using device {}'.format(device))
+    logger.info("=" * 50)
 
 
     metadata = dict((n, getattr(args, n)) for n in dir(args) if not (n.startswith('__') or 'logger' in n))
@@ -381,7 +388,7 @@ if __name__ == '__main__':
     """
     Train
     """
-    model, ckpt_path = train(args, model, train_loader, test_loader, device, logger, optimizers=optimizers)
+    model, ckpt_path = train(args, model, train_loader, test_loader, jpeg_loader, device, logger, optimizers=optimizers)
 
     """
     TODO

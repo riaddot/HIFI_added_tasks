@@ -20,7 +20,7 @@ from src.helpers import maths, datasets, utils
 from src.network import encoder, generator, discriminator, hyper, mobilefacenet, Superlatent
 from src.loss.perceptual_similarity import perceptual_loss as ps 
 
-from default_config import ModelModes, ModelTypes, hific_args, directories
+from default_config import ModelModes, ModelTypes, hific_args, directories, args
 
 from pytorch_msssim import ssim
 
@@ -55,10 +55,11 @@ class Model(nn.Module):
         self.storage_test = storage_test
         self.step_counter = 0
         
+        # args.default_task = 'HiFiC'
+        # self.args.tasks = args.default_task
+        # self.args.checkpoint = r"../models/hific_hi.pt"
 
-        self.args.checkpoint = r"C:\Users\TEMMMAR\Desktop\Hifi_local\Chekpoint\hific-high.pt"
-        self.args.optimal_latent = False
-        self.args.tasks = 'HiFiC'
+        self.optimal_latent = False if args.default_task in self.args.tasks else True       
 
         
         if self.args.use_latent_mixture_model is True:
@@ -80,13 +81,13 @@ class Model(nn.Module):
         self.Encoder = encoder.Encoder(self.image_dims, self.batch_size, C=self.args.latent_channels,
             channel_norm=self.args.use_channel_norm)
         
-        self.Encoder = self.load_submodel(self.Encoder, self.args.checkpoint, freeze=self.args.optimal_latent, sub_model='Encoder')
+        self.Encoder = self.load_submodel(self.Encoder, self.args.checkpoint, freeze = self.optimal_latent, sub_model = 'Encoder')
 
         if "Zoom" in self.args.tasks:
 
             self.logger.info('Zoom pipeline added to the framework')
             #Trainable
-            self.SuperNet = Superlatent.AdaptEDSR(num_blocks=16, ResBlocks_channels=64)
+            self.SuperNet = Superlatent.AdaptEDSR(num_blocks = 16, ResBlocks_channels = 64)
             #Trainable
             self.SuperDecoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
                 n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
@@ -107,37 +108,9 @@ class Model(nn.Module):
             self.FaceDecoder = self.load_submodel(self.FaceDecoder, self.args.checkpoint,False)
 
             #Non Trainable
-            self.MobileFaceNet = mobilefacenet.load_mobileface()
-
-            for param in self.MobileFaceNet.parameters():
-                param.requires_grad = False 
-
+            self.MobileFaceNet = mobilefacenet.load_mobileface(freeze = True)
             self.MobileFaceNet.eval()
 
-        # if "global" in self.args.tasks:
-
-        #     self.logger.info('FFX and Zoom pipelines have been added to the framework')
-
-        #      #Trainable
-        #     self.SuperNet = Superlatent.AdaptEDSR(num_blocks=16, ResBlocks_channels=64)
-
-        #     self.SuperDecoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
-        #         n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
-        #         self.args.sample_noise, noise_dim=self.args.noise_dim)
-        #     self.load_submodel(self.SuperDecoder, self.args.checkpoint, False)  # Initiate HIFI Weights 
-
-
-        #     self.MobFaceDecoder = mobilefacenet.load_mobileface()
-        #     self.FaceDecoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
-        #         n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
-        #         self.args.sample_noise, noise_dim=self.args.noise_dim)
-        #     self.load_submodel(self.FaceDecoder, self.args.checkpoint,False)
-
-        #     #Non Trainable
-        #     self.MobileFaceNet = mobilefacenet.load_mobileface()
-        #     for param in self.MobileFaceNet.parameters():
-        #         param.requires_grad = False 
-        #     self.MobileFaceNet.eval()
 
         #Non Trainable
         self.Decoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
@@ -153,7 +126,7 @@ class Model(nn.Module):
                 likelihood_type=self.args.likelihood_type, entropy_code=self.entropy_code)
 
 
-        self.Hyperprior = self.load_submodel(self.Hyperprior, self.args.checkpoint, sub_model = "Hyperprior")
+        self.Hyperprior = self.load_submodel(self.Hyperprior, self.args.checkpoint, freeze=self.optimal_latent, sub_model = "Hyperprior")
 
         self.amortization_models = [self.Encoder, self.Decoder]
         self.amortization_models.extend(self.Hyperprior.amortization_models)
@@ -456,7 +429,7 @@ class Model(nn.Module):
         # Bookkeeping 
         if (self.step_counter % self.log_interval == 1):
             # self.store_loss('distortion', distortion_loss.item())
-            self.store_loss('perceptual', perceptual_loss.item())
+            self.d('perceptual', perceptual_loss.item())
 
         return perceptual_loss
 
@@ -475,8 +448,8 @@ class Model(nn.Module):
 
         # Bookkeeping 
         if (self.step_counter % self.log_interval == 1):
-            self.store_loss('D_gen', torch.mean(disc_out.D_gen).item())
-            self.store_loss('D_real', torch.mean(disc_out.D_real).item())
+            self.d('D_gen', torch.mean(disc_out.D_gen).item())
+            self.d('D_real', torch.mean(disc_out.D_real).item())
             self.store_loss('disc_loss', D_loss.item())
             self.store_loss('gen_loss', G_loss.item())
             self.store_loss('weighted_gen_loss', (self.args.beta * G_loss).item())
@@ -603,10 +576,10 @@ class Model(nn.Module):
             
             return reconstruction, intermediates.q_bpp
             
-        if self.args.optimal_latent == True :
-            compression_model_loss = 0
-        else : 
+        if not(self.optimal_latent):
             compression_model_loss = self.compression_loss(intermediates, hyperinfo)
+        else : 
+            compression_model_loss = 0
 
 
         if "Zoom" in self.args.tasks:
@@ -625,11 +598,11 @@ class Model(nn.Module):
             compression_model_loss += weighted_G_loss
             losses['disc'] = D_loss
         
-        losses['compression'] = torch.tensor(compression_model_loss, dtype=torch.float32,requires_grad=True)
+        losses['compression'] = compression_model_loss
 
         # Bookkeeping 
         if (self.step_counter % self.log_interval == 1):
-            self.store_loss('weighted_compression_loss', torch.tensor(compression_model_loss, dtype=torch.float32).item())
+            self.store_loss('weighted_compression_loss', compression_model_loss.item())
 
         if return_intermediates is True:
             return losses, intermediates
