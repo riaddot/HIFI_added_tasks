@@ -159,13 +159,13 @@ class AdaptEDSR(nn.Module):
     def forward(self, input):
 
         x = self.conv0(input)
-        y = self.body(x) + x
-        # x = self.conv1(y) 
-        x = self.conv2(y) #edité le 10/05/2024 (turn it to comment)
-        x = self.upscale(x)
-        x = self.conv3(x)
+        y = self.body(x)
+        y = self.conv1(y) + x
+        y = self.conv2(y) #edité le 10/05/2024 (turn it to comment)
+        y = self.upscale(y)
+        y = self.conv3(y)
 
-        return x
+        return y
     
 
 if __name__ == "__main__":
