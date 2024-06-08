@@ -7,7 +7,7 @@ from collections import namedtuple
 import math
 import pdb
 
-MOBILEFACENET_PATH = "/home/bellelbn/DL/models/MobileFace_Net"
+MOBILEFACENET_PATH = "../models/MobileFace_Net"
 
 class Flatten(Module):
     def forward(self, input):

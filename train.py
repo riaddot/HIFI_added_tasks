@@ -9,6 +9,7 @@ python3 train.py -h
     arXiv:2006.09965 (2020).
 """
 import numpy as np
+from PIL import Image
 import os, glob, time, datetime
 import logging, pickle, argparse
 import functools, itertools
@@ -111,6 +112,71 @@ def load_generator(model,path):
     return model.load_state_dict(new_state_dict,strict=False)
 
 
+def eval_jpegai(model, image_dir):
+    
+    ssim_rec = utils.AverageMeter()
+    ssim_zoom = utils.AverageMeter()
+    
+    psnr_rec = utils.AverageMeter()
+    psnr_zoom = utils.AverageMeter()
+
+    model.eval()
+
+    images = glob.glob(os.path.join(image_dir, "*.png"))
+    with torch.no_grad():
+        for i, img_name in enumerate(tqdm(images)):
+            image = Image.open(img_name)
+
+            image_array = np.array(image)
+            image_array = image_array.transpose(2,0,1)
+            
+            image_array = image_array / 255.0
+            image_array = (image_array-0.5)/0.5
+            image = torch.zeros(1,3, image_array.shape[1], image_array.shape[2])
+            tensor_img = torch.from_numpy(image_array)
+            image[0] = tensor_img
+
+            image = F.upsample(image, size=(image.size(2)//2, image.size(3)//2), mode='bicubic')
+            image = image.to(device)
+            print(image.shape)
+            # losses = model(image)
+            # model.model_mode = 'validation'
+            losses = model(image, return_intermediates=False, writeout=False)
+
+            compression_loss = losses['compression']
+
+            if "HiFiC" in args.tasks:
+                
+                ssim = losses['perceptual rec']
+                ssim_rec.update(ssim, image.size(0))
+
+                psnr = losses['psnr rec']
+                psnr_rec.update(psnr, image.size(0))
+
+            if "Zoom" in args.tasks:
+                ssim = losses['perceptual zoom']
+                ssim_zoom.update(ssim, image.size(0))
+
+                psnr = losses['psnr zoom']
+                psnr_zoom.update(psnr.item(), image.size(0))
+                
+            if i % 5 == 0:
+                print('Test_JPEGAI: [{0}/{1}]\t'
+                        'psnr_rec {psnr_rec.val:.4f} ({psnr_rec.avg:.4f})\t'
+                        # 'mse_rec {mse_rec.val:.4f} ({mse_rec.avg:.4f})\t'
+                        'ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})\t'.format(
+                        i, len(images), psnr_rec = psnr_rec, ssim_rec = ssim_rec))
+
+        print('Test_JPEGAI: [{0}/{1}]\t'
+                    'psnr_rec {psnr_rec.val:.4f} ({psnr_rec.avg:.4f})\t'
+                    # 'mse_rec {mse_rec.val:.4f} ({mse_rec.avg:.4f})\t'
+                    'ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})\t'.format(
+                    i+1, len(images), psnr_rec = psnr_rec, ssim_rec = ssim_rec))
+
+        
+        # return psnr_rec.avg, ssim_rec.avg
+
+
 def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, optimizers):
 
     start_time = time.time()
@@ -123,10 +189,19 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
     storage, storage_test = model.storage_train, model.storage_test
 
     amortization_opt, hyperlatent_likelihood_opt = optimizers['amort'], optimizers['hyper']
+
     if model.use_discriminator is True:
         disc_opt = optimizers['disc']
 
     for epoch in trange(args.n_epochs, desc='Epoch'):
+        
+        ssim_rec = utils.AverageMeter()
+        ssim_zoom = utils.AverageMeter()
+
+        psnr_rec = utils.AverageMeter()
+        psnr_zoom = utils.AverageMeter()
+        
+        cosine_ffx = utils.AverageMeter()
 
         epoch_loss, epoch_test_loss = [], []  
         epoch_start_time = time.time()
@@ -140,6 +215,8 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
 
             data = data.to(device, dtype=torch.float)
             
+            # eval_jpegai(model, args.image_dir)
+
             try:
                 if model.use_discriminator is True:
                     # Train D for D_steps, then G, using distinct batches
@@ -164,7 +241,7 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                     losses = model(data, train_generator=True)
                     compression_loss = losses['compression']
                     optimize_compression_loss(compression_loss, amortization_opt, hyperlatent_likelihood_opt)
-
+ 
             except KeyboardInterrupt:
                 # Note: saving not guaranteed!
                 if model.step_counter > args.log_interval+1:
@@ -175,12 +252,13 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                     return model, None
 
             if model.step_counter % args.log_interval == 1:
+                
                 epoch_loss.append(compression_loss.item())
                 mean_epoch_loss = np.mean(epoch_loss)
 
-                best_loss = utils.log(model, storage, epoch, idx, mean_epoch_loss, compression_loss.item(),
-                                best_loss, start_time, epoch_start_time, batch_size=data.shape[0],
-                                avg_bpp=bpp.mean().item(), logger=logger, writer=train_writer)
+                # best_loss = utils.log(model, storage, epoch, idx, mean_epoch_loss, compression_loss.item(),
+                #                 best_loss, start_time, epoch_start_time, batch_size=data.shape[0],
+                #                 avg_bpp=bpp.mean().item(), logger=logger, writer=train_writer)
                 try:
                     test_data, test_bpp = next(test_loader_iter)
                     # jpeg_test_data, jpeg_test_bpp = next(jpeg_loader_iter)
@@ -188,8 +266,8 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                     test_loader_iter = iter(test_loader)
                     test_data, test_bpp = next(test_loader_iter)
 
-                best_test_loss, epoch_test_loss = test(args, model, epoch, idx, data, test_data, test_bpp, device, epoch_test_loss, storage_test,
-                     best_test_loss, start_time, epoch_start_time, logger, train_writer, test_writer)
+                # best_test_loss, epoch_test_loss = test(args, model, epoch, idx, data, test_data, test_bpp, device, epoch_test_loss, storage_test,
+                #      best_test_loss, start_time, epoch_start_time, logger, train_writer, test_writer)
 
                 with open(os.path.join(args.storage_save, 'storage_{}_tmp.pkl'.format(args.name)), 'wb') as handle:
                     pickle.dump(storage, handle, protocol=pickle.HIGHEST_PROTOCOL)
@@ -205,11 +283,15 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                 if model.step_counter > args.n_steps:
                     logger.info('Reached step limit [args.n_steps = {}]'.format(args.n_steps))
                     break
+                
+                print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch, losses)
 
             if (idx % args.save_interval == 1) and (idx > args.save_interval):
                 ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
-
+            
         # End epoch
+
+        # eval_jpegai(model, args.image_dir)
         mean_epoch_loss = np.mean(epoch_loss)
         mean_epoch_test_loss = np.mean(epoch_test_loss)
 
@@ -231,6 +313,53 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
     logger.info("Training complete. Time elapsed: {:.3f} s. Number of steps: {}".format((time.time()-start_time), model.step_counter))
     
     return model, ckpt_path
+
+def print_performance(args, data_size, avg_bpp, storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch, losses):
+
+    if "HiFiC" in args.tasks:
+        ssim = losses['perceptual rec']
+        ssim_rec.update(ssim.item(), args.batch_size)
+
+        psnr = losses['psnr rec']
+        psnr_rec.update(np.mean(psnr), args.batch_size)
+
+    if "Zoom" in args.tasks:
+        ssim = losses['perceptual zoom']
+        ssim_zoom.update(ssim, args.batch_size)
+
+        psnr = losses['psnr zoom']
+        psnr_zoom.update(np.mean(psnr), args.batch_size)
+
+    if "FFX" in args.tasks:
+        cosine = losses['cosine sim']
+        cosine_ffx.update(cosine, args.batch_size)
+    
+
+    display = '\nEPOCH: [{0}][{1}/{2}]\t'.format(epoch, idx, data_size)
+    if "HiFiC" in args.tasks:
+        display += 'psnr_rec {psnr_rec.val:.4f} ({psnr_rec.avg:.4f})\t ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})'.format(psnr_rec = psnr_rec, ssim_rec = ssim_rec)
+    
+    if "Zoom" in args.tasks:
+        display += '\tpsnr_zoom {psnr_zoom.val:.4f} ({psnr_zoom.avg:.4f})\t ssim_zoom {ssim_zoom.val:.3f} ({ssim_zoom.avg:.3f})'.format(psnr_zoom = psnr_zoom, ssim_zoom = ssim_zoom)
+          
+    if "FFX" in args.tasks:
+        display += '\tcosine_ffx {cosine_ffx.val:.3f} ({cosine_ffx.avg:.3f})'.format(cosine_ffx = cosine_ffx)
+
+    
+    display += '\n'
+    display += "Rate-Distortion:"
+    display += "Weighted Rate: {:.3f} | Perceptual: {:.3f} | Rate Penalty: {:.3f}".format(storage['weighted_rate'][-1], 
+                                           storage['perceptual'][-1], storage['rate_penalty'][-1])
+
+    display += '\n'
+    display += "Rate Breakdown:"
+    display += "avg. original bpp: {:.3f} | n_bpp (total): {:.3f} | q_bpp (total): {:.3f} | n_bpp (latent): {:.3f} | q_bpp (latent): {:.3f} | n_bpp (hyp-latent): {:.3f} | q_bpp (hyp-latent): {:.3f}".format(avg_bpp, storage['n_rate'][-1], storage['q_rate'][-1], 
+             storage['n_rate_latent'][-1], storage['q_rate_latent'][-1], storage['n_rate_hyperlatent'][-1], storage['q_rate_hyperlatent'][-1])
+    
+    display += '\n'
+    display += '=' * 200
+    
+    print(display)
 
 
 if __name__ == '__main__':
@@ -272,7 +401,7 @@ if __name__ == '__main__':
     arch_args.add_argument('-nrb', '--n_residual_blocks', type=int, default=hific_args.n_residual_blocks,
         help="Number of residual blocks to use in Generator.")
     
-    arch_args.add_argument('-t', '--tasks', choices=['Zoom','FFX'], nargs='+', default=hific_args.default_task, help="Choose which task to add into the MTL framework")
+    arch_args.add_argument('-t', '--tasks', choices=['HiFiC', 'Zoom','FFX'], nargs='+', default=hific_args.default_task, help="Choose which task to add into the MTL framework")
 
     # Warmstart adversarial training from autoencoder/hyperprior
     warmstart_args = parser.add_argument_group("Warmstart options")

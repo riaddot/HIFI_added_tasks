@@ -16,7 +16,7 @@ from torchvision import transforms
 # Custom modules
 from src import hyperprior
 from src.loss import losses
-from src.helpers import maths, datasets, utils
+from src.helpers import maths, datasets, utils, metrics
 from src.network import encoder, generator, discriminator, hyper, mobilefacenet, Superlatent
 from src.loss.perceptual_similarity import perceptual_loss as ps 
 
@@ -55,11 +55,10 @@ class Model(nn.Module):
         self.storage_test = storage_test
         self.step_counter = 0
         
-        # args.default_task = 'HiFiC'
-        # self.args.tasks = args.default_task
-        # self.args.checkpoint = r"../models/hific_hi.pt"
-
-        self.optimal_latent = False if args.default_task in self.args.tasks else True       
+        self.optimal_latent = False if args.default_task in self.args.tasks else True
+        # self.args.checkpoint = r"/home/berrani-ahmed/DL/models/hific_hi.pt"
+        # self.optimal_latent = True
+        # self.args.tasks = 'HiFiC'
 
         
         if self.args.use_latent_mixture_model is True:
@@ -100,6 +99,7 @@ class Model(nn.Module):
             self.logger.info('FFX pipeline added to the framework')
             #Trainable
             self.MobFaceDecoder = mobilefacenet.load_mobileface()
+
             #Trainable
             self.FaceDecoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
                 n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
@@ -413,23 +413,17 @@ class Model(nn.Module):
             # self.store_loss('weighted_R_D', weighted_R_D_loss.item())
             # self.store_loss('weighted_compression_loss_sans_G', weighted_compression_loss.item())
 
-        return rec_compression_loss #weighted_compression_loss
+        return rec_compression_loss, perceptual_loss #weighted_compression_loss
 
 
-    def zoom_loss(self, x_hr, reconst_zoom):
+    def zoom_loss(self, reconst_zoom, x_hr):
 
         if self.args.normalize_input_image is True:
             # [-1.,1.] -> [0.,1.]
             x_hr = (x_hr + 1.) / 2.
             reconst_zoom = (reconst_zoom + 1.) / 2.
 
-        # distortion_loss = self.distortion_loss(reconst_zoom, x_hr)
         perceptual_loss = self.perceptual_ssim_loss(reconst_zoom, x_hr)
-
-        # Bookkeeping 
-        if (self.step_counter % self.log_interval == 1):
-            # self.store_loss('distortion', distortion_loss.item())
-            self.d('perceptual', perceptual_loss.item())
 
         return perceptual_loss
 
@@ -550,7 +544,6 @@ class Model(nn.Module):
             self.step_counter += 1
 
         x = F.upsample(x_hr, size=(x_hr.size(2)//2, x_hr.size(3)//2), mode='bicubic')
-        # x = x_hr
         
         intermediates, hyperinfo = self.compression_forward(x)
 
@@ -562,6 +555,9 @@ class Model(nn.Module):
         if self.model_mode == ModelModes.EVALUATION:
             reconstruction = intermediates.reconstruction
 
+            compression_model_loss, _ = self.compression_loss(intermediates, hyperinfo)
+
+
             if self.args.normalize_input_image is True:
                 # [-1.,1.] -> [0.,1.]
                 reconstruction = (reconstruction + 1.) / 2.
@@ -572,23 +568,36 @@ class Model(nn.Module):
 
             if "Zoom" in self.args.tasks:
                 reconst_zoom = torch.clamp(reconst_zoom, min=0., max=1.)
+
                 return [reconstruction, reconst_zoom], intermediates.q_bpp
             
             return reconstruction, intermediates.q_bpp
             
         if not(self.optimal_latent):
-            compression_model_loss = self.compression_loss(intermediates, hyperinfo)
+            compression_model_loss, ssim_rec = self.compression_loss(intermediates, hyperinfo)
+            losses['perceptual rec'] = ssim_rec
+
+            reconstruction = intermediates.reconstruction
+            psnr = metrics.psnr((reconstruction.cpu().detach().numpy() + 1) / 2, (x.cpu().detach().numpy() + 1) / 2, 1)
+            losses['psnr rec'] = psnr
         else : 
             compression_model_loss = 0
 
 
         if "Zoom" in self.args.tasks:
-            compression_model_loss += self.zoom_loss(reconst_zoom, x_hr)
-        if "FFX" in self.args.tasks:
-            compression_model_loss += self.ffx_loss(emb_gt, emb_pred)
-        # if self.args.tasks=="global": 
-        #     compression_model_loss += self.zoom_loss(reconst_zoom, x_hr) + self.ffx_loss(emb_gt, emb_pred)
+            zoom_loss = self.zoom_loss(reconst_zoom, x_hr)
+            compression_model_loss += zoom_loss
+            losses['perceptual zoom'] = zoom_loss
 
+            psnr = metrics.psnr((reconst_zoom.cpu().detach().numpy() + 1) / 2, (x_hr.cpu().detach().numpy() + 1) / 2, 1)
+            losses['psnr zoom'] = psnr
+
+
+        if "FFX" in self.args.tasks:
+            ffx_loss = self.ffx_loss(emb_gt, emb_pred)
+            compression_model_loss += ffx_loss
+
+            losses['cosine sim'] = ffx_loss
 
         if self.use_discriminator is True:
             # Only send gradients to generator when training generator via

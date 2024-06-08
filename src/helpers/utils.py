@@ -26,6 +26,24 @@ class Swish(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(self.beta * x)
 
+
+class AverageMeter(object):
+    def __init__(self):
+        self.reset()
+
+    def reset(self):
+        self.val = 0
+        self.avg = 0
+        self.sum = 0
+        self.count = 0
+
+    def update(self, val, n=1):
+        self.val = val
+        self.sum += val * n
+        self.count += n
+        self.avg = self.sum / self.count
+
+        
 def get_device(is_gpu=True):
     """Return the correct device"""
     is_gpu = False
@@ -176,9 +194,8 @@ def load_model(save_path, logger, device, model_type=None, model_mode=None, curr
     checkpoint = torch.load(save_path)
     loaded_args_d = checkpoint['args']
 
-
     args = Struct(**loaded_args_d)
-    
+
     if current_args_d is not None:
         if silent is False:
             for k,v in current_args_d.items():

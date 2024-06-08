@@ -40,7 +40,7 @@ class args(object):
     n_epochs = 8
     n_steps = 1e6
     batch_size = 32
-    log_interval = 1000
+    log_interval = 5
     save_interval = 50000
     gpu = 0
     multigpu = True
