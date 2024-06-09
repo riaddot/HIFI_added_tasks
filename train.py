@@ -250,7 +250,11 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                     return model, ckpt_path
                 else:
                     return model, None
+            
+            
 
+            update_performance(args, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, losses)
+                
             if model.step_counter % args.log_interval == 1:
                 
                 epoch_loss.append(compression_loss.item())
@@ -284,7 +288,7 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                     logger.info('Reached step limit [args.n_steps = {}]'.format(args.n_steps))
                     break
                 
-                print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch, losses)
+                print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch)
 
             if (idx % args.save_interval == 1) and (idx > args.save_interval):
                 ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
@@ -314,8 +318,7 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
     
     return model, ckpt_path
 
-def print_performance(args, data_size, avg_bpp, storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch, losses):
-
+def update_performance(args, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, losses):
     if "HiFiC" in args.tasks:
         ssim = losses['perceptual rec']
         ssim_rec.update(ssim.item(), args.batch_size)
@@ -333,26 +336,28 @@ def print_performance(args, data_size, avg_bpp, storage, ssim_rec, ssim_zoom, ps
     if "FFX" in args.tasks:
         cosine = losses['cosine sim']
         cosine_ffx.update(cosine, args.batch_size)
-    
 
-    display = '\nEPOCH: [{0}][{1}/{2}]\t'.format(epoch, idx, data_size)
+
+def print_performance(args, data_size, avg_bpp, storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch):
+    
+    display = '\nEPOCH: [{0}][{1}/{2}]'.format(epoch, idx, data_size)
     if "HiFiC" in args.tasks:
-        display += 'psnr_rec {psnr_rec.val:.4f} ({psnr_rec.avg:.4f})\t ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})'.format(psnr_rec = psnr_rec, ssim_rec = ssim_rec)
+        display += '\tpsnr_rec {psnr_rec.val:.3f} ({psnr_rec.avg:.3f})\t ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})'.format(psnr_rec = psnr_rec, ssim_rec = ssim_rec)
     
     if "Zoom" in args.tasks:
-        display += '\tpsnr_zoom {psnr_zoom.val:.4f} ({psnr_zoom.avg:.4f})\t ssim_zoom {ssim_zoom.val:.3f} ({ssim_zoom.avg:.3f})'.format(psnr_zoom = psnr_zoom, ssim_zoom = ssim_zoom)
+        display += '\tpsnr_zoom {psnr_zoom.val:.3f} ({psnr_zoom.avg:.3f})\t ssim_zoom {ssim_zoom.val:.3f} ({ssim_zoom.avg:.3f})'.format(psnr_zoom = psnr_zoom, ssim_zoom = ssim_zoom)
           
     if "FFX" in args.tasks:
         display += '\tcosine_ffx {cosine_ffx.val:.3f} ({cosine_ffx.avg:.3f})'.format(cosine_ffx = cosine_ffx)
 
     
     display += '\n'
-    display += "Rate-Distortion:"
+    display += "Rate-Distortion:\n"
     display += "Weighted Rate: {:.3f} | Perceptual: {:.3f} | Rate Penalty: {:.3f}".format(storage['weighted_rate'][-1], 
                                            storage['perceptual'][-1], storage['rate_penalty'][-1])
 
     display += '\n'
-    display += "Rate Breakdown:"
+    display += "Rate Breakdown:\n"
     display += "avg. original bpp: {:.3f} | n_bpp (total): {:.3f} | q_bpp (total): {:.3f} | n_bpp (latent): {:.3f} | q_bpp (latent): {:.3f} | n_bpp (hyp-latent): {:.3f} | q_bpp (hyp-latent): {:.3f}".format(avg_bpp, storage['n_rate'][-1], storage['q_rate'][-1], 
              storage['n_rate_latent'][-1], storage['q_rate_latent'][-1], storage['n_rate_hyperlatent'][-1], storage['q_rate_hyperlatent'][-1])
     
