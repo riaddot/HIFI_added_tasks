@@ -4,18 +4,29 @@ import warnings
 import torch
 import torch.nn.functional as F
 
-def psnr(img1, img2, max_val=255.):
+def psnr(img1, img2, max_val=255., lib = "numpy"):
     """
     Based on `tf.image.psnr`
     https://www.tensorflow.org/api_docs/python/tf/image/psnr
     """
-    float_type = 'float64' 
 
-    img1 = img1.astype(float_type)
-    img2 = img2.astype(float_type)
-    mse = np.mean(np.square(img1 - img2), axis=(1, 2, 3))
-    psnr = 20 * np.log10(max_val) - 10 * np.log10(mse)
-    return psnr
+    if lib == "numpy":
+        float_type = 'float64' 
+        img1 = img1.astype(float_type)
+        img2 = img2.astype(float_type)
+        mse = np.mean(np.square(img1 - img2), axis=(1, 2, 3))
+        psnr = 20 * np.log10(max_val) - 10 * np.log10(mse)
+        return np.mean(psnr)
+
+    else:
+        float_type = torch.float64
+        img1 = img1.to(float_type)
+        img2 = img2.to(float_type)
+
+        mse = torch.mean((img1 - img2) ** 2, dim=(1, 2, 3))
+        psnr = 20 * torch.log10(torch.tensor(max_val)) - 10 * torch.log10(mse)
+        
+        return torch.mean(psnr)
 
 def _fspecial_gauss_1d(size, sigma):
     r"""Create 1-D gauss kernel
