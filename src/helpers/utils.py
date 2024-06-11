@@ -321,37 +321,49 @@ def logger_setup(logpath, filepath, package_files=[]):
             logger.info(package_f.read())
     return logger
 
-def log_summaries(writer, storage, step, use_discriminator=False):
+def log_summaries(args, writer, storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, step, mode, use_discriminator=False):
 
-    weighted_compression_scalars = ['compression_loss_sans_G',
-                                    # 'weighted_R_D',
-                                    'weighted_rate',
-                                    # 'weighted_distortion',
-                                    'perceptual',
-                                    'rate_penalty']
+    if "HiFiC" in args.tasks:
+        weighted_compression_scalars = ['compression_loss_sans_G',
+                                        'weighted_rate',
+                                        'perceptual',
+                                        'rate_penalty']
 
-    compression_scalars = ['n_rate', 'q_rate', 'n_rate_latent' ,'q_rate_latent', 
-        'n_rate_hyperlatent', 'q_rate_hyperlatent', 'perceptual']
-    gan_scalars = ['disc_loss', 'gen_loss', 'weighted_gen_loss', 'D_gen', 'D_real']
+        compression_scalars = ['n_rate', 'q_rate', 'n_rate_latent' ,'q_rate_latent', 
+            'n_rate_hyperlatent', 'q_rate_hyperlatent', 'perceptual']
+        gan_scalars = ['disc_loss', 'gen_loss', 'weighted_gen_loss', 'D_gen', 'D_real']
 
-    compression_loss_breakdown = dict(total_comp=storage['compression_loss_sans_G'][-1],
-                                      weighted_rate=storage['weighted_rate'][-1],
-                                    #   weighted_distortion=storage['weighted_distortion'][-1],
-                                      weighted_perceptual=storage['perceptual'][-1])
+        compression_loss_breakdown = dict(total_comp=storage['compression_loss_sans_G'][-1],
+                                        weighted_rate=storage['weighted_rate'][-1],
+                                        #   weighted_distortion=storage['weighted_distortion'][-1],
+                                        weighted_perceptual=storage['perceptual'][-1])
 
-    for scalar in weighted_compression_scalars:
-        writer.add_scalar('weighted_compression/{}'.format(scalar), storage[scalar][-1], step)
+        for scalar in weighted_compression_scalars:
+            writer.add_scalar('weighted_compression/{}'.format(scalar), storage[scalar][-1], step)
 
-    for scalar in compression_scalars:
-        writer.add_scalar('compression/{}'.format(scalar), storage[scalar][-1], step)
+        for scalar in compression_scalars:
+            writer.add_scalar('compression/{}'.format(scalar), storage[scalar][-1], step)
 
-    if use_discriminator is True:
-        compression_loss_breakdown['weighted_gen_loss'] = storage['weighted_gen_loss'][-1]
-        for scalar in gan_scalars:
-            writer.add_scalar('GAN/{}'.format(scalar), storage[scalar][-1], step)
+        if use_discriminator is True:
+            compression_loss_breakdown['weighted_gen_loss'] = storage['weighted_gen_loss'][-1]
+            for scalar in gan_scalars:
+                writer.add_scalar('GAN/{}'.format(scalar), storage[scalar][-1], step)
 
-    # Breakdown overall loss
-    writer.add_scalars('compression_loss_breakdown', compression_loss_breakdown, step)
+        # Breakdown overall loss
+        writer.add_scalars('compression_loss_breakdown', compression_loss_breakdown, step)
+
+    # if "HiFiC" in args.tasks:
+        writer.add_scalar('{}/ssim_rec_avg'.format(mode), ssim_rec.avg, step)
+        writer.add_scalar('{}/psnr_rec_avg'.format(mode), psnr_rec.avg, step)
+
+
+    if "Zoom" in args.tasks:
+        writer.add_scalar('{}/ssim_zoom_avg'.format(mode), ssim_zoom.avg, step)
+        writer.add_scalar('{}/psnr_zoom_avg'.format(mode), psnr_zoom.avg, step)
+
+        
+    if "FFX" in args.tasks and cosine_ffx is not None:
+        writer.add_scalar('{}/cosine_ffx_avg'.format(mode), cosine_ffx.avg, step)
 
 
 def log(model, storage, epoch, idx, mean_epoch_loss, current_loss, best_loss, start_time, epoch_start_time, 

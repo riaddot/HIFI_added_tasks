@@ -557,7 +557,6 @@ class Model(nn.Module):
 
             compression_model_loss, _ = self.compression_loss(intermediates, hyperinfo)
 
-
             if self.args.normalize_input_image is True:
                 # [-1.,1.] -> [0.,1.]
                 reconstruction = (reconstruction + 1.) / 2.
@@ -575,29 +574,32 @@ class Model(nn.Module):
             
         if not(self.optimal_latent):
             compression_model_loss, ssim_rec = self.compression_loss(intermediates, hyperinfo)
-            losses['perceptual rec'] = ssim_rec
-
+            
             reconstruction = intermediates.reconstruction
-            psnr = metrics.psnr((reconstruction.cpu().detach().numpy() + 1) / 2, (x.cpu().detach().numpy() + 1) / 2, 1)
-            losses['psnr rec'] = psnr
+            psnr = metrics.psnr((reconstruction + 1) / 2, (x + 1) / 2, 1, lib = "torch")
+            
+            # if (self.step_counter % self.log_interval == 1):
+            self.store_loss('perceptual rec', ssim_rec.item())
+            self.store_loss('psnr rec', psnr.item())
         else : 
             compression_model_loss = 0
-
 
         if "Zoom" in self.args.tasks:
             zoom_loss = self.zoom_loss(reconst_zoom, x_hr)
             compression_model_loss += zoom_loss
-            losses['perceptual zoom'] = zoom_loss
 
-            psnr = metrics.psnr((reconst_zoom.cpu().detach().numpy() + 1) / 2, (x_hr.cpu().detach().numpy() + 1) / 2, 1)
-            losses['psnr zoom'] = psnr
+            psnr = metrics.psnr((reconst_zoom + 1) / 2, (x_hr + 1) / 2, 1, lib = "torch")
 
+            # if (self.step_counter % self.log_interval == 1):
+            self.store_loss('perceptual zoom', zoom_loss.item())
+            self.store_loss('psnr zoom', psnr.item())
 
         if "FFX" in self.args.tasks:
             ffx_loss = self.ffx_loss(emb_gt, emb_pred)
             compression_model_loss += ffx_loss
 
-            losses['cosine sim'] = ffx_loss
+            # if (self.step_counter % self.log_interval == 1):
+            self.store_loss('cosine sim', ffx_loss.item())
 
         if self.use_discriminator is True:
             # Only send gradients to generator when training generator via

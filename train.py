@@ -186,6 +186,7 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
     best_loss, best_test_loss, mean_epoch_loss = np.inf, np.inf, np.inf     
     train_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'train'))
     test_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'test'))
+    jpegai_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'jpegai'))
     storage, storage_test = model.storage_train, model.storage_test
 
     amortization_opt, hyperlatent_likelihood_opt = optimizers['amort'], optimizers['hyper']
@@ -195,13 +196,17 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
 
     for epoch in trange(args.n_epochs, desc='Epoch'):
         
-        ssim_rec = utils.AverageMeter()
-        ssim_zoom = utils.AverageMeter()
+        ssim_rec_train = utils.AverageMeter()
+        ssim_zoom_train = utils.AverageMeter()
+        psnr_rec_train = utils.AverageMeter()
+        psnr_zoom_train = utils.AverageMeter()
+        cosine_ffx_train = utils.AverageMeter()
 
-        psnr_rec = utils.AverageMeter()
-        psnr_zoom = utils.AverageMeter()
-        
-        cosine_ffx = utils.AverageMeter()
+        # ssim_rec_test = utils.AverageMeter()
+        # ssim_zoom_test = utils.AverageMeter()
+        # psnr_rec_test = utils.AverageMeter()
+        # psnr_zoom_test = utils.AverageMeter()
+        # cosine_ffx_test = utils.AverageMeter()
 
         epoch_loss, epoch_test_loss = [], []  
         epoch_start_time = time.time()
@@ -251,10 +256,11 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                 else:
                     return model, None
             
-            
+            update_performance(args, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, storage)
 
-            update_performance(args, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, losses)
-                
+            # Plot on Tensorboard per iteration
+            # utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, mode = 'train_lfw', use_discriminator=model.use_discriminator)
+
             if model.step_counter % args.log_interval == 1:
                 
                 epoch_loss.append(compression_loss.item())
@@ -288,17 +294,32 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                     logger.info('Reached step limit [args.n_steps = {}]'.format(args.n_steps))
                     break
                 
-                print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch)
+                print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch)
 
             if (idx % args.save_interval == 1) and (idx > args.save_interval):
                 ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
             
         # End epoch
 
+        # Plot on Tensorboard per Epoch
+        utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'train_lfw', use_discriminator=model.use_discriminator)
+
+        # eval_lfw(model, args.image_dir)
+        #Update performance for lfw test loop
+        # update_performance(args, ssim_rec_test, ssim_zoom_test, psnr_rec_test, psnr_zoom_test, cosine_ffx_test, losses)
+        # print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec_test, ssim_zoom_test, psnr_rec_test, psnr_zoom_test, cosine_ffx_test, idx, epoch)
+        # utils.log_summaries(args, test_writer, storage, ssim_rec_test, ssim_zoom_test, psnr_rec_test, psnr_zoom_test, cosine_ffx_test, epoch, mode = 'val_lfw', use_discriminator=model.use_discriminator)
+
         # eval_jpegai(model, args.image_dir)
+        #Update performance for jpegai test loop
+        # update_performance(args, ssim_rec_jpegai, ssim_zoom_jpegai, psnr_rec_jpegai, psnr_zoom_jpegai, None, losses)
+        # print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec_jpegai, ssim_zoom_jpegai, psnr_rec_jpegai, psnr_zoom_jpegai, None, idx, epoch)
+        # utils.log_summaries(args, jpegai_writer, storage, ssim_rec_jpegai, ssim_zoom_jpegai, psnr_rec_jpegai, psnr_zoom_jpegai, None, epoch, mode = 'jpegai_test', use_discriminator=model.use_discriminator)
+
         mean_epoch_loss = np.mean(epoch_loss)
         mean_epoch_test_loss = np.mean(epoch_test_loss)
 
+        
         
         logger.info('===>> Epoch {} | Mean train loss: {:.3f} | Mean test loss: {:.3f}'.format(epoch, 
             mean_epoch_loss, mean_epoch_test_loss))    
@@ -318,23 +339,23 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
     
     return model, ckpt_path
 
-def update_performance(args, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, losses):
+def update_performance(args, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, store):
     if "HiFiC" in args.tasks:
-        ssim = losses['perceptual rec']
-        ssim_rec.update(ssim.item(), args.batch_size)
+        ssim = store['perceptual rec'][-1]
+        ssim_rec.update(ssim, args.batch_size)
 
-        psnr = losses['psnr rec']
-        psnr_rec.update(np.mean(psnr), args.batch_size)
+        psnr = store['psnr rec'][-1]
+        psnr_rec.update(psnr, args.batch_size)
 
     if "Zoom" in args.tasks:
-        ssim = losses['perceptual zoom']
+        ssim = store['perceptual zoom'][-1]
         ssim_zoom.update(ssim, args.batch_size)
 
-        psnr = losses['psnr zoom']
-        psnr_zoom.update(np.mean(psnr), args.batch_size)
+        psnr = store['psnr zoom'][-1]
+        psnr_zoom.update(psnr, args.batch_size)
 
-    if "FFX" in args.tasks:
-        cosine = losses['cosine sim']
+    if "FFX" in args.tasks and cosine_ffx is not None:
+        cosine = store['cosine sim'][-1]
         cosine_ffx.update(cosine, args.batch_size)
 
 
@@ -347,22 +368,22 @@ def print_performance(args, data_size, avg_bpp, storage, ssim_rec, ssim_zoom, ps
     if "Zoom" in args.tasks:
         display += '\tpsnr_zoom {psnr_zoom.val:.3f} ({psnr_zoom.avg:.3f})\t ssim_zoom {ssim_zoom.val:.3f} ({ssim_zoom.avg:.3f})'.format(psnr_zoom = psnr_zoom, ssim_zoom = ssim_zoom)
           
-    if "FFX" in args.tasks:
+    if "FFX" in args.tasks and cosine_ffx is not None:
         display += '\tcosine_ffx {cosine_ffx.val:.3f} ({cosine_ffx.avg:.3f})'.format(cosine_ffx = cosine_ffx)
-
     
-    display += '\n'
-    display += "Rate-Distortion:\n"
-    display += "Weighted Rate: {:.3f} | Perceptual: {:.3f} | Rate Penalty: {:.3f}".format(storage['weighted_rate'][-1], 
-                                           storage['perceptual'][-1], storage['rate_penalty'][-1])
+    if "HiFiC" in args.tasks:
+        display += '\n'
+        display += "Rate-Distortion:\n"
+        display += "Weighted Rate: {:.3f} | Perceptual: {:.3f} | Rate Penalty: {:.3f}".format(storage['weighted_rate'][-1], 
+                                            storage['perceptual'][-1], storage['rate_penalty'][-1])
 
+        display += '\n'
+        display += "Rate Breakdown:\n"
+        display += "avg. original bpp: {:.3f} | n_bpp (total): {:.3f} | q_bpp (total): {:.3f} | n_bpp (latent): {:.3f} | q_bpp (latent): {:.3f} | n_bpp (hyp-latent): {:.3f} | q_bpp (hyp-latent): {:.3f}".format(avg_bpp, storage['n_rate'][-1], storage['q_rate'][-1], 
+                storage['n_rate_latent'][-1], storage['q_rate_latent'][-1], storage['n_rate_hyperlatent'][-1], storage['q_rate_hyperlatent'][-1])
+        
     display += '\n'
-    display += "Rate Breakdown:\n"
-    display += "avg. original bpp: {:.3f} | n_bpp (total): {:.3f} | q_bpp (total): {:.3f} | n_bpp (latent): {:.3f} | q_bpp (latent): {:.3f} | n_bpp (hyp-latent): {:.3f} | q_bpp (hyp-latent): {:.3f}".format(avg_bpp, storage['n_rate'][-1], storage['q_rate'][-1], 
-             storage['n_rate_latent'][-1], storage['q_rate_latent'][-1], storage['n_rate_hyperlatent'][-1], storage['q_rate_hyperlatent'][-1])
-    
-    display += '\n'
-    display += '=' * 200
+    display += '=' * 180
     
     print(display)
 
