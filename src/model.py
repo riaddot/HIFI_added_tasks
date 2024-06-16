@@ -128,7 +128,16 @@ class Model(nn.Module):
 
         self.Hyperprior = self.load_submodel(self.Hyperprior, self.args.checkpoint, freeze=self.optimal_latent, sub_model = "Hyperprior")
 
-        self.amortization_models = [self.Encoder, self.Decoder]
+        self.amortization_models = []
+        if "HiFiC" in self.args.tasks:
+            self.amortization_models.append(self.Encoder)
+        if "Zoom" in self.args.tasks:
+            self.amortization_models.append(self.SuperNet)
+            self.amortization_models.append(self.SuperDecoder)
+        if "FFX" in self.args.tasks:
+            self.amortization_models.append(self.FaceDecoder)
+            self.amortization_models.append(self.MobFaceDecoder)
+
         self.amortization_models.extend(self.Hyperprior.amortization_models)
 
         # Use discriminator if GAN mode enabled and in training/validation

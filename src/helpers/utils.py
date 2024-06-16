@@ -46,7 +46,7 @@ class AverageMeter(object):
         
 def get_device(is_gpu=True):
     """Return the correct device"""
-    is_gpu = False
+
     return torch.device("cuda" if torch.cuda.is_available() and is_gpu
                         else "cpu")
 
