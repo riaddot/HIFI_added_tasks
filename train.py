@@ -23,6 +23,8 @@ import torchvision
 import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
+from torch.optim.lr_scheduler import LambdaLR
+
 
 # Custom modules
 from src.model import Model
@@ -239,6 +241,10 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         disc_opt = optimizers['disc']
 
 
+    lambda_lr = lambda epoch: 0.95 ** epoch
+    scheduler_amortization = LambdaLR(amortization_opt, lambda_lr)
+    scheduler_hyperlatent_likelihood = LambdaLR(hyperlatent_likelihood_opt, lambda_lr)
+    
     for epoch in trange(args.n_epochs, desc='Epoch'):
         
         storage = model.storage_train
@@ -331,8 +337,8 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
                 # model.train()
 
                 # LR scheduling
-                utils.update_lr(args, amortization_opt, model.step_counter, logger)
-                utils.update_lr(args, hyperlatent_likelihood_opt, model.step_counter, logger)
+                # utils.update_lr(args, amortization_opt, epoch, logger)
+                # utils.update_lr(args, hyperlatent_likelihood_opt, epoch, logger)
 
                 # if model.use_discriminator is True:
                 #     utils.update_lr(args, disc_opt, model.step_counter, logger)
@@ -348,6 +354,7 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
             
         # End epoch
         print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
+
         # Plot on Tensorboard per Epoch
         utils.log_summaries(args, train_writer, storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'train_lfw', use_discriminator=model.use_discriminator)
 
@@ -357,20 +364,20 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
             logger.info('===>> Loss imporved from {:.3f} to {:.3f}'.format(best_val_loss, val_loss))
             ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
             args.checkpoint = ckpt_path
-
             best_val_loss = val_loss
 
-
+        scheduler_amortization.step()
+        scheduler_hyperlatent_likelihood.step()
+        logger.info("Adjusting learning rate to {:.7f}".format(scheduler_amortization.get_lr()[0]))
+        
         logger.info("=" * 150)
         logger.info("\n")
     
         if model.step_counter > args.n_steps:
             break
 
-
     with open(os.path.join(args.storage_save, 'storage_{}_{:%Y_%m_%d_%H:%M:%S}.pkl'.format(args.name, datetime.datetime.now())), 'wb') as handle:
         pickle.dump(storage, handle, protocol=pickle.HIGHEST_PROTOCOL)
-    
     
     logger.info("Training complete. Time elapsed: {:.3f} s. Number of steps: {}".format((time.time()-start_time), model.step_counter))
     
@@ -378,7 +385,6 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
 
 def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, store):
 
-    
     loss.update(store["weighted_compression_loss"][-1], args.batch_size)
 
     if "HiFiC" in args.tasks:
