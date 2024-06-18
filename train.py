@@ -217,14 +217,12 @@ def eval_lfw(args, epoch, model, val_loader, device, writer):
 def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, optimizers):
 
     start_time = time.time()
-    # val_loader_iter = iter(val_loader)
-    # jpeg_loader_iter = iter(jpeg_loader)
+
     current_D_steps, train_generator = 0, True
     best_loss, best_val_loss, mean_epoch_loss = np.inf, np.inf, np.inf     
     train_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'train'))
     val_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'val'))
     jpegai_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'jpegai'))
-    storage = model.storage_train
 
     amortization_opt, hyperlatent_likelihood_opt = optimizers['amort'], optimizers['hyper']
     
@@ -233,6 +231,7 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
 
     for epoch in trange(args.n_epochs, desc='Epoch'):
         
+        storage = model.storage_train
 
         loss_train = utils.AverageMeter() 
         ssim_rec_train = utils.AverageMeter()
