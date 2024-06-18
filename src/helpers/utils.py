@@ -50,6 +50,13 @@ def get_device(is_gpu=True):
     return torch.device("cuda" if torch.cuda.is_available() and is_gpu
                         else "cpu")
 
+
+def use_multi_gpu():
+    use_gpu = True if get_device().type == "cuda" else False
+    multi_gpu = torch.cuda.device_count() > 1 if use_gpu else False
+    
+    return multi_gpu
+
 def get_model_device(model):
     """Return the device where the model sits."""
     return next(model.parameters()).device
@@ -321,7 +328,10 @@ def logger_setup(logpath, filepath, package_files=[]):
             logger.info(package_f.read())
     return logger
 
-def log_summaries(args, writer, storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, step, mode, use_discriminator=False):
+def log_summaries(args, writer, storage, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, step, mode, use_discriminator=False):
+
+
+    writer.add_scalar('{}/loss'.format(mode), loss.avg, step)
 
     if "HiFiC" in args.tasks:
         weighted_compression_scalars = ['compression_loss_sans_G',

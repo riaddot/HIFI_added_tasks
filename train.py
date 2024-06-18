@@ -28,6 +28,8 @@ from src.model import Model
 from src.helpers import utils, datasets
 from default_config import hific_args, mse_lpips_args, directories, ModelModes, ModelTypes
 
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 # go fast boi!!
 torch.backends.cudnn.benchmark = True
 
@@ -64,8 +66,8 @@ def optimize_compression_loss(compression_loss, amortization_opt, hyperlatent_li
     amortization_opt.zero_grad()
     hyperlatent_likelihood_opt.zero_grad()
 
-def test(args, model, epoch, idx, data, test_data, test_bpp, device, epoch_test_loss, storage, best_test_loss, 
-         start_time, epoch_start_time, logger, train_writer, test_writer):
+def test(args, model, epoch, idx, data, test_data, test_bpp, device, epoch_test_loss, storage, best_val_loss, 
+         start_time, epoch_start_time, logger, train_writer, val_writer):
 
     model.eval()  
     with torch.no_grad():
@@ -77,19 +79,19 @@ def test(args, model, epoch, idx, data, test_data, test_bpp, device, epoch_test_
 
         test_data = test_data.to(device, dtype=torch.float)
         losses, intermediates = model(test_data, return_intermediates=True, writeout=True)
-        utils.save_images(test_writer, model.step_counter, intermediates.input_image, intermediates.reconstruction,
+        utils.save_images(val_writer, model.step_counter, intermediates.input_image, intermediates.reconstruction,
             fname=os.path.join(args.figures_save, 'recon_epoch{}_idx{}_TEST_{:%Y_%m_%d_%H:%M}.jpg'.format(epoch, idx, datetime.datetime.now())))
     
         compression_loss = losses['compression'] 
         epoch_test_loss.append(compression_loss.item())
         mean_test_loss = np.mean(epoch_test_loss)
         
-        best_test_loss = utils.log(model, storage, epoch, idx, mean_test_loss, compression_loss.item(), 
-                                     best_test_loss, start_time, epoch_start_time, 
+        best_val_loss = utils.log(model, storage, epoch, idx, mean_test_loss, compression_loss.item(), 
+                                     best_val_loss, start_time, epoch_start_time, 
                                      batch_size=data.shape[0], avg_bpp=test_bpp.mean().item(),header='[TEST]', 
-                                     logger=logger, writer=test_writer)
+                                     logger=logger, writer=val_writer)
         
-    return best_test_loss, epoch_test_loss
+    return best_val_loss, epoch_test_loss
 
 def load_generator(model,path):
     """ Loading the pretrained weights from the HIFI ckpt to the Generator 
@@ -110,6 +112,8 @@ def load_generator(model,path):
         param.requires_grad = False 
 
     return model.load_state_dict(new_state_dict,strict=False)
+
+
 
 
 def eval_jpegai(model, image_dir):
@@ -138,12 +142,11 @@ def eval_jpegai(model, image_dir):
 
             image = F.upsample(image, size=(image.size(2)//2, image.size(3)//2), mode='bicubic')
             image = image.to(device)
-            print(image.shape)
             # losses = model(image)
             # model.model_mode = 'validation'
             losses = model(image, return_intermediates=False, writeout=False)
 
-            compression_loss = losses['compression']
+            compression_loss = losses['compression'].item()
 
             if "HiFiC" in args.tasks:
                 
@@ -161,13 +164,13 @@ def eval_jpegai(model, image_dir):
                 psnr_zoom.update(psnr.item(), image.size(0))
                 
             if i % 5 == 0:
-                print('Test_JPEGAI: [{0}/{1}]\t'
+                logger.info('Test_JPEGAI: [{0}/{1}]\t'
                         'psnr_rec {psnr_rec.val:.4f} ({psnr_rec.avg:.4f})\t'
                         # 'mse_rec {mse_rec.val:.4f} ({mse_rec.avg:.4f})\t'
                         'ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})\t'.format(
                         i, len(images), psnr_rec = psnr_rec, ssim_rec = ssim_rec))
 
-        print('Test_JPEGAI: [{0}/{1}]\t'
+        logger.info('Test_JPEGAI: [{0}/{1}]\t'
                     'psnr_rec {psnr_rec.val:.4f} ({psnr_rec.avg:.4f})\t'
                     # 'mse_rec {mse_rec.val:.4f} ({mse_rec.avg:.4f})\t'
                     'ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})\t'.format(
@@ -177,42 +180,72 @@ def eval_jpegai(model, image_dir):
         # return psnr_rec.avg, ssim_rec.avg
 
 
-def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, optimizers):
+def eval_lfw(args, epoch, model, val_loader, device, writer):
+
+    val_loss = utils.AverageMeter()
+    ssim_rec_val = utils.AverageMeter()
+    ssim_zoom_val = utils.AverageMeter()
+    psnr_rec_val = utils.AverageMeter()
+    psnr_zoom_val = utils.AverageMeter()
+    cosine_ffx_val = utils.AverageMeter()
+
+    model.eval()
+
+    storage = model.storage_val
+
+    with torch.no_grad():
+        for idx, (data, bpp) in enumerate(tqdm(val_loader, desc='Val'), 0):
+
+            data = data.to(device, dtype=torch.float)
+
+            losses, intermediates = model(data, return_intermediates=True, writeout=True)
+
+            # val_loss.update(losses["compression"].item())
+
+            update_performance(args, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, storage)
+
+            if idx % 100 == 0:
+                print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch)
+        
+        print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch)
+
+        utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'val_lfw', use_discriminator=model.use_discriminator)
+
+        return val_loss.avg
+
+
+def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, optimizers):
 
     start_time = time.time()
-    test_loader_iter = iter(test_loader)
+    # val_loader_iter = iter(val_loader)
     # jpeg_loader_iter = iter(jpeg_loader)
     current_D_steps, train_generator = 0, True
-    best_loss, best_test_loss, mean_epoch_loss = np.inf, np.inf, np.inf     
+    best_loss, best_val_loss, mean_epoch_loss = np.inf, np.inf, np.inf     
     train_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'train'))
-    test_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'test'))
+    val_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'val'))
     jpegai_writer = SummaryWriter(os.path.join(args.tensorboard_runs, 'jpegai'))
-    storage, storage_test = model.storage_train, model.storage_test
+    storage = model.storage_train
 
     amortization_opt, hyperlatent_likelihood_opt = optimizers['amort'], optimizers['hyper']
-
+    
     if model.use_discriminator is True:
         disc_opt = optimizers['disc']
 
     for epoch in trange(args.n_epochs, desc='Epoch'):
         
+
+        loss_train = utils.AverageMeter() 
         ssim_rec_train = utils.AverageMeter()
         ssim_zoom_train = utils.AverageMeter()
         psnr_rec_train = utils.AverageMeter()
         psnr_zoom_train = utils.AverageMeter()
         cosine_ffx_train = utils.AverageMeter()
 
-        # ssim_rec_test = utils.AverageMeter()
-        # ssim_zoom_test = utils.AverageMeter()
-        # psnr_rec_test = utils.AverageMeter()
-        # psnr_zoom_test = utils.AverageMeter()
-        # cosine_ffx_test = utils.AverageMeter()
-
-        epoch_loss, epoch_test_loss = [], []  
+        epoch_loss, epoch_val_loss = [], []  
         epoch_start_time = time.time()
         
-        if epoch > 0:
-            ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
+        # if epoch > 0:
+        #     ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
         
         model.train()
 
@@ -256,76 +289,62 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
                 else:
                     return model, None
             
-            update_performance(args, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, storage)
+            update_performance(args, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, storage)
 
             # Plot on Tensorboard per iteration
             # utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, mode = 'train_lfw', use_discriminator=model.use_discriminator)
 
             if model.step_counter % args.log_interval == 1:
                 
-                epoch_loss.append(compression_loss.item())
-                mean_epoch_loss = np.mean(epoch_loss)
+                # epoch_loss.append(compression_loss.item())
+                # mean_epoch_loss = np.mean(epoch_loss)
 
                 # best_loss = utils.log(model, storage, epoch, idx, mean_epoch_loss, compression_loss.item(),
                 #                 best_loss, start_time, epoch_start_time, batch_size=data.shape[0],
                 #                 avg_bpp=bpp.mean().item(), logger=logger, writer=train_writer)
-                try:
-                    test_data, test_bpp = next(test_loader_iter)
-                    # jpeg_test_data, jpeg_test_bpp = next(jpeg_loader_iter)
-                except StopIteration:
-                    test_loader_iter = iter(test_loader)
-                    test_data, test_bpp = next(test_loader_iter)
+                # try:
+                #     val_data, val_bpp = next(val_loader_iter)
+                #     # jpeg_val_data, jpeg_val_bpp = next(jpeg_loader_iter)
+                # except StopIteration:
+                #     val_loader_iter = iter(val_loader)
+                #     val_data, val_bpp = next(val_loader_iter)
 
-                # best_test_loss, epoch_test_loss = test(args, model, epoch, idx, data, test_data, test_bpp, device, epoch_test_loss, storage_test,
-                #      best_test_loss, start_time, epoch_start_time, logger, train_writer, test_writer)
+                # best_val_loss, epoch_val_loss = val(args, model, epoch, idx, data, val_data, val_bpp, device, epoch_val_loss, storage_val,
+                #      best_val_loss, start_time, epoch_start_time, logger, train_writer, val_writer)
 
-                with open(os.path.join(args.storage_save, 'storage_{}_tmp.pkl'.format(args.name)), 'wb') as handle:
-                    pickle.dump(storage, handle, protocol=pickle.HIGHEST_PROTOCOL)
+                # with open(os.path.join(args.storage_save, 'storage_{}_tmp.pkl'.format(args.name)), 'wb') as handle:
+                #     pickle.dump(storage, handle, protocol=pickle.HIGHEST_PROTOCOL)
 
-                model.train()
+                # model.train()
 
                 # LR scheduling
                 utils.update_lr(args, amortization_opt, model.step_counter, logger)
                 utils.update_lr(args, hyperlatent_likelihood_opt, model.step_counter, logger)
-                if model.use_discriminator is True:
-                    utils.update_lr(args, disc_opt, model.step_counter, logger)
 
-                if model.step_counter > args.n_steps:
-                    logger.info('Reached step limit [args.n_steps = {}]'.format(args.n_steps))
-                    break
+                # if model.use_discriminator is True:
+                #     utils.update_lr(args, disc_opt, model.step_counter, logger)
+
+                # if model.step_counter > args.n_steps:
+                #     logger.info('Reached step limit [args.n_steps = {}]'.format(args.n_steps))
+                #     break
                 
-                print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch)
+                print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch)
 
-            if (idx % args.save_interval == 1) and (idx > args.save_interval):
-                ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
+            # if (idx % args.save_interval == 1) and (idx > args.save_interval):
+            #     ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
             
         # End epoch
 
         # Plot on Tensorboard per Epoch
-        utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'train_lfw', use_discriminator=model.use_discriminator)
+        utils.log_summaries(args, train_writer, storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'train_lfw', use_discriminator=model.use_discriminator)
 
-        # eval_lfw(model, args.image_dir)
-        #Update performance for lfw test loop
-        # update_performance(args, ssim_rec_test, ssim_zoom_test, psnr_rec_test, psnr_zoom_test, cosine_ffx_test, losses)
-        # print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec_test, ssim_zoom_test, psnr_rec_test, psnr_zoom_test, cosine_ffx_test, idx, epoch)
-        # utils.log_summaries(args, test_writer, storage, ssim_rec_test, ssim_zoom_test, psnr_rec_test, psnr_zoom_test, cosine_ffx_test, epoch, mode = 'val_lfw', use_discriminator=model.use_discriminator)
-
-        # eval_jpegai(model, args.image_dir)
-        #Update performance for jpegai test loop
-        # update_performance(args, ssim_rec_jpegai, ssim_zoom_jpegai, psnr_rec_jpegai, psnr_zoom_jpegai, None, losses)
-        # print_performance(args, len(train_loader), bpp.mean().item(), storage, ssim_rec_jpegai, ssim_zoom_jpegai, psnr_rec_jpegai, psnr_zoom_jpegai, None, idx, epoch)
-        # utils.log_summaries(args, jpegai_writer, storage, ssim_rec_jpegai, ssim_zoom_jpegai, psnr_rec_jpegai, psnr_zoom_jpegai, None, epoch, mode = 'jpegai_test', use_discriminator=model.use_discriminator)
-
-        mean_epoch_loss = np.mean(epoch_loss)
-        mean_epoch_test_loss = np.mean(epoch_test_loss)
-
+        val_loss = eval_lfw(args, epoch, model, val_loader, device, val_writer)
         
-        
-        logger.info('===>> Epoch {} | Mean train loss: {:.3f} | Mean test loss: {:.3f}'.format(epoch, 
-            mean_epoch_loss, mean_epoch_test_loss))    
-        
-        # logger.info('===>> Epoch {}\tSSIM Train: {:.3f}({:.3f})\tSSIM Test: {:.3f}({:.3f})'.format(epoch, 
-        #     1 - mean_epoch_loss, 1 - mean_epoch_test_loss))  
+
+        if val_loss < best_val_loss:
+            logger.info('===>> Loss imporved from {:.3f} to {:.3f}'.format(best_val_loss, val_loss))
+            ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
+            args.checkpoint = ckpt_path
 
         if model.step_counter > args.n_steps:
             break
@@ -333,13 +352,16 @@ def train(args, model, train_loader, test_loader, jpeg_loader, device, logger, o
     with open(os.path.join(args.storage_save, 'storage_{}_{:%Y_%m_%d_%H:%M:%S}.pkl'.format(args.name, datetime.datetime.now())), 'wb') as handle:
         pickle.dump(storage, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
-    ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
-    args.checkpoint = ckpt_path
+    
     logger.info("Training complete. Time elapsed: {:.3f} s. Number of steps: {}".format((time.time()-start_time), model.step_counter))
     
     return model, ckpt_path
 
-def update_performance(args, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, store):
+def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, store):
+
+    
+    loss.update(store["weighted_compression_loss"][-1], args.batch_size)
+
     if "HiFiC" in args.tasks:
         ssim = store['perceptual rec'][-1]
         ssim_rec.update(ssim, args.batch_size)
@@ -359,9 +381,12 @@ def update_performance(args, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ff
         cosine_ffx.update(cosine, args.batch_size)
 
 
-def print_performance(args, data_size, avg_bpp, storage, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch):
+def print_performance(args, data_size, avg_bpp, storage, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch):
     
     display = '\nEPOCH: [{0}][{1}/{2}]'.format(epoch, idx, data_size)
+
+    display += '\tloss {loss.val:.3f} ({loss.avg:.3f})'.format(loss = loss)
+
     if "HiFiC" in args.tasks:
         display += '\tpsnr_rec {psnr_rec.val:.3f} ({psnr_rec.avg:.3f})\t ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})'.format(psnr_rec = psnr_rec, ssim_rec = ssim_rec)
     
@@ -385,7 +410,7 @@ def print_performance(args, data_size, avg_bpp, storage, ssim_rec, ssim_zoom, ps
     display += '\n'
     display += '=' * 180
     
-    print(display)
+    logger.info(display)
 
 
 if __name__ == '__main__':
@@ -459,7 +484,7 @@ if __name__ == '__main__':
 
     storage = defaultdict(list)
     storage_test = defaultdict(list)
-    logger = utils.logger_setup(logpath=os.path.join(args.snapshot, 'logs'), filepath=os.path.abspath(__file__))
+    logger = utils.logger_setup(logpath=os.path.join(args.snapshot, 'logs.txt'), filepath=os.path.abspath(__file__))
 
     # if args.warmstart is True:
     #     assert args.warmstart_ckpt is not None, 'Must provide checkpoint to previously trained AE/HP model.'
@@ -471,6 +496,12 @@ if __name__ == '__main__':
     # else:
     model = create_model(args, device, logger, storage, storage_test)
     model = model.to(device)
+    
+    multi_gpu = torch.cuda.device_count() > 1 if torch.cuda.is_available() else False
+    if multi_gpu:
+        model = nn.DataParallel(model)
+
+
     amortization_parameters = itertools.chain.from_iterable(
         [am.parameters() for am in model.amortization_models])
 
@@ -503,7 +534,7 @@ if __name__ == '__main__':
     logger.info('USING GPU ID {}'.format(args.gpu))
     logger.info('USING DATASET: {}'.format(args.dataset))
 
-    test_loader = datasets.get_dataloaders(args.dataset,
+    val_loader = datasets.get_dataloaders(args.dataset,
                                 root=args.dataset_path,
                                 batch_size=args.batch_size,
                                 logger=logger,
@@ -528,7 +559,7 @@ if __name__ == '__main__':
     args.image_dims = train_loader.dataset.image_dims
     logger.info("=" * 50)
     logger.info('Training elements: {}'.format(args.n_data))
-    logger.info('Testing elements: {}'.format(len(test_loader.dataset)))
+    logger.info('Testing elements: {}'.format(len(val_loader.dataset)))
     logger.info('JPEGAI elements: {}'.format(len(jpeg_loader.dataset)))
     logger.info('Input Dimensions: {}'.format(args.image_dims))
     logger.info('Batch size: {}'.format(args.batch_size))
@@ -543,7 +574,7 @@ if __name__ == '__main__':
     """
     Train
     """
-    model, ckpt_path = train(args, model, train_loader, test_loader, jpeg_loader, device, logger, optimizers=optimizers)
+    model, ckpt_path = train(args, model, train_loader, val_loader, jpeg_loader, device, logger, optimizers=optimizers)
 
     """
     TODO

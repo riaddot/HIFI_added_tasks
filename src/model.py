@@ -39,7 +39,7 @@ Disc_out= namedtuple("disc_out",
 
 class Model(nn.Module):
 
-    def __init__(self, args, logger, storage_train=defaultdict(list), storage_test=defaultdict(list), model_mode=ModelModes.TRAINING, 
+    def __init__(self, args, logger, storage_train=defaultdict(list), storage_val=defaultdict(list), model_mode=ModelModes.TRAINING, 
             model_type=ModelTypes.COMPRESSION):
         super(Model, self).__init__()
 
@@ -52,7 +52,7 @@ class Model(nn.Module):
         self.logger = logger
         self.log_interval = args.log_interval
         self.storage_train = storage_train
-        self.storage_test = storage_test
+        self.storage_val = storage_val
         self.step_counter = 0
         
         self.optimal_latent = False if args.default_task in self.args.tasks else True
@@ -195,7 +195,7 @@ class Model(nn.Module):
         if self.training is True:
             storage = self.storage_train
         else:
-            storage = self.storage_test
+            storage = self.storage_val
 
         if self.writeout is True:
             storage[key].append(loss)
@@ -404,23 +404,23 @@ class Model(nn.Module):
         # weighted_compression_loss = weighted_R_D_loss + weighted_perceptual
 
         # Bookkeeping 
-        if (self.step_counter % self.log_interval == 1):
-            self.store_loss('rate_penalty', rate_penalty)
-            # self.store_loss('distortion', distortion_loss.item())
-            self.store_loss('perceptual', perceptual_loss.item())
-            self.store_loss('n_rate', intermediates.n_bpp.item())
-            self.store_loss('q_rate', intermediates.q_bpp.item())
-            self.store_loss('n_rate_latent', hyperinfo.latent_nbpp.item())
-            self.store_loss('q_rate_latent', hyperinfo.latent_qbpp.item())
-            self.store_loss('n_rate_hyperlatent', hyperinfo.hyperlatent_nbpp.item())
-            self.store_loss('q_rate_hyperlatent', hyperinfo.hyperlatent_qbpp.item())
+        # if (self.step_counter % self.log_interval == 1):
+        self.store_loss('rate_penalty', rate_penalty)
+        # self.store_loss('distortion', distortion_loss.item())
+        self.store_loss('perceptual', perceptual_loss.item())
+        self.store_loss('n_rate', intermediates.n_bpp.item())
+        self.store_loss('q_rate', intermediates.q_bpp.item())
+        self.store_loss('n_rate_latent', hyperinfo.latent_nbpp.item())
+        self.store_loss('q_rate_latent', hyperinfo.latent_qbpp.item())
+        self.store_loss('n_rate_hyperlatent', hyperinfo.hyperlatent_nbpp.item())
+        self.store_loss('q_rate_hyperlatent', hyperinfo.hyperlatent_qbpp.item())
 
-            self.store_loss('weighted_rate', weighted_rate.item())
-            self.store_loss('compression_loss_sans_G', rec_compression_loss.item())
-            # self.store_loss('weighted_distortion', weighted_distortion.item())
-            # self.store_loss('weighted_perceptual', weighted_perceptual.item())
-            # self.store_loss('weighted_R_D', weighted_R_D_loss.item())
-            # self.store_loss('weighted_compression_loss_sans_G', weighted_compression_loss.item())
+        self.store_loss('weighted_rate', weighted_rate.item())
+        self.store_loss('compression_loss_sans_G', rec_compression_loss.item())
+        # self.store_loss('weighted_distortion', weighted_distortion.item())
+        # self.store_loss('weighted_perceptual', weighted_perceptual.item())
+        # self.store_loss('weighted_R_D', weighted_R_D_loss.item())
+        # self.store_loss('weighted_compression_loss_sans_G', weighted_compression_loss.item())
 
         return rec_compression_loss, perceptual_loss #weighted_compression_loss
 
@@ -621,8 +621,8 @@ class Model(nn.Module):
         losses['compression'] = compression_model_loss
 
         # Bookkeeping 
-        if (self.step_counter % self.log_interval == 1):
-            self.store_loss('weighted_compression_loss', compression_model_loss.item())
+        # if (self.step_counter % self.log_interval == 1):
+        self.store_loss('weighted_compression_loss', compression_model_loss.item())
 
         if return_intermediates is True:
             return losses, intermediates
@@ -642,9 +642,9 @@ if __name__ == '__main__':
     device = utils.get_device()
     logger.info(f'Using device {device}')
     storage_train = defaultdict(list)
-    storage_test = defaultdict(list)
+    storage_val = defaultdict(list)
 
-    model = Model(hific_args, logger, storage_train, storage_test, model_mode=model_mode, model_type=ModelTypes.COMPRESSION_GAN)
+    model = Model(hific_args, logger, storage_train, storage_val, model_mode=model_mode, model_type=ModelTypes.COMPRESSION_GAN)
     model.to(device)
 
     logger.info(model)
