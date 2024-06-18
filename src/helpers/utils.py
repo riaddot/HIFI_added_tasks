@@ -141,7 +141,8 @@ def setup_generic_signature(args, special_info):
     makedirs(args.figures_save)
     makedirs(args.storage_save)
     makedirs(os.path.join(args.tensorboard_runs, 'train'))
-    makedirs(os.path.join(args.tensorboard_runs, 'test'))
+    makedirs(os.path.join(args.tensorboard_runs, 'val'))
+    makedirs(os.path.join(args.tensorboard_runs, 'jpegai'))
 
     return args
 
@@ -379,10 +380,8 @@ def log_summaries(args, writer, storage, loss, ssim_rec, ssim_zoom, psnr_rec, ps
         # Breakdown overall loss
         writer.add_scalars('compression_loss_breakdown', compression_loss_breakdown, step)
 
-    # if "HiFiC" in args.tasks:
         writer.add_scalar('{}/ssim_rec_avg'.format(mode), ssim_rec.avg, step)
         writer.add_scalar('{}/psnr_rec_avg'.format(mode), psnr_rec.avg, step)
-
 
     if "Zoom" in args.tasks:
         writer.add_scalar('{}/ssim_zoom_avg'.format(mode), ssim_zoom.avg, step)

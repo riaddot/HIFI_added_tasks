@@ -212,7 +212,7 @@ def eval_lfw(args, epoch, model, val_loader, device, writer):
 
         print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
 
-        utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'val_lfw', use_discriminator=model.use_discriminator)
+        utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
 
         return val_loss.avg
 
@@ -311,7 +311,7 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
             update_performance(args, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, storage)
 
             # Plot on Tensorboard per iteration
-            # utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, mode = 'train_lfw', use_discriminator=model.use_discriminator)
+            # utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, mode = 'lfw', use_discriminator=model.use_discriminator)
 
             if model.step_counter % args.log_interval == 1:
                 
@@ -356,7 +356,7 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
 
         # Plot on Tensorboard per Epoch
-        utils.log_summaries(args, train_writer, storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'train_lfw', use_discriminator=model.use_discriminator)
+        utils.log_summaries(args, train_writer, storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
 
         val_loss = eval_lfw(args, epoch, model, val_loader, device, val_writer)
         
