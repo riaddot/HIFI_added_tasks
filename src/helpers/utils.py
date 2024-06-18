@@ -116,7 +116,20 @@ def setup_generic_signature(args, special_info):
 
     print(args.name)
     args.snapshot = os.path.join('experiments', args.name)
-    args.checkpoints_save = os.path.join(args.snapshot, 'checkpoints')
+
+    checkpoint_folder = []
+    # Append the relevant strings to the list if their corresponding tasks are present
+    if "HiFiC" in args.tasks:
+        checkpoint_folder.append("HiFiC")
+    if "Zoom" in args.tasks:
+        checkpoint_folder.append("Zoom")
+    if "FFX" in args.tasks:
+        checkpoint_folder.append("FFX")
+
+    # Join the components with underscores to form the final folder name
+    checkpoint_folder = "_".join(checkpoint_folder)
+
+    args.checkpoints_save = os.path.join(args.snapshot, checkpoint_folder)
     args.figures_save = os.path.join(args.snapshot, 'figures')
     args.storage_save = os.path.join(args.snapshot, 'storage')
     args.tensorboard_runs = os.path.join(args.snapshot, 'tensorboard')
@@ -168,10 +181,12 @@ def save_model(model, optimizers, mean_epoch_loss, epoch, device, args, logger, 
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=4, sort_keys=True)
             
-    model_path = os.path.join(directory, '{}_epoch{}_idx{}_{}.pt'.format(model_name, epoch, model.step_counter, timestamp))
+    
+    model_path = os.path.join(directory, 'best_checkpoint.pt'.format(model_name, epoch, model.step_counter, timestamp))
+    # model_path = os.path.join(directory, '{}_epoch{}_idx{}_{}.pt'.format(model_name, epoch, model.step_counter, timestamp))
 
-    if os.path.exists(model_path):
-        model_path = os.path.join(directory, '{}_epoch{}_idx{}_{:%Y_%m_%d_%H:%M:%S}.pt'.format(model_name, epoch, model.step_counter, datetime.datetime.now()))
+    # if os.path.exists(model_path):
+    #     model_path = os.path.join(directory, '{}_epoch{}_idx{}_{:%Y_%m_%d_%H:%M:%S}.pt'.format(model_name, epoch, model.step_counter, datetime.datetime.now()))
 
     save_dict = {   'model_state_dict': model.module.state_dict() if args.multigpu is True else model.state_dict(),
                     'compression_optimizer_state_dict': optimizers['amort'].state_dict(),
@@ -187,7 +202,7 @@ def save_model(model, optimizers, mean_epoch_loss, epoch, device, args, logger, 
         save_dict['discriminator_optimizer_state_dict'] = optimizers['disc'].state_dict()
 
     torch.save(save_dict, f=model_path)
-    logger.info('Saved model at Epoch {}, step {} to {}'.format(epoch, model.step_counter, model_path))
+    logger.info('Saved model at Epoch {} to {}'.format(epoch, model_path))
     
     model.to(device)  # Move back to device
     return model_path

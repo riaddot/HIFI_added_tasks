@@ -131,6 +131,7 @@ class Model(nn.Module):
         self.amortization_models = []
         if "HiFiC" in self.args.tasks:
             self.amortization_models.append(self.Encoder)
+            self.amortization_models.extend(self.Hyperprior.amortization_models)
         if "Zoom" in self.args.tasks:
             self.amortization_models.append(self.SuperNet)
             self.amortization_models.append(self.SuperDecoder)
@@ -138,7 +139,6 @@ class Model(nn.Module):
             self.amortization_models.append(self.FaceDecoder)
             self.amortization_models.append(self.MobFaceDecoder)
 
-        self.amortization_models.extend(self.Hyperprior.amortization_models)
 
         # Use discriminator if GAN mode enabled and in training/validation
         self.use_discriminator = (
