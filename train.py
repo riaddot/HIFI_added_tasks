@@ -151,7 +151,7 @@ def eval_jpegai(model, image_dir):
 
             compression_loss = losses['compression'].item()
 
-            if "HiFiC" in args.tasks:
+            if args.default_task in args.tasks:
                 
                 ssim = losses['perceptual rec']
                 ssim_rec.update(ssim, image.size(0))
@@ -387,7 +387,7 @@ def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cos
 
     loss.update(store["weighted_compression_loss"][-1], args.batch_size)
 
-    if "HiFiC" in args.tasks:
+    if args.default_task in args.tasks:
         ssim = store['perceptual rec'][-1]
         ssim_rec.update(ssim, args.batch_size)
 
@@ -415,7 +415,7 @@ def print_performance(args, data_size, avg_bpp, storage, loss, ssim_rec, ssim_zo
 
     display += '\tloss {loss.val:.3f} ({loss.avg:.3f})'.format(loss = loss)
 
-    if "HiFiC" in args.tasks:
+    if args.default_task in args.tasks:
         display += '\tpsnr_rec {psnr_rec.val:.3f} ({psnr_rec.avg:.3f})\t ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})'.format(psnr_rec = psnr_rec, ssim_rec = ssim_rec)
     
     if "Zoom" in args.tasks:
@@ -424,7 +424,7 @@ def print_performance(args, data_size, avg_bpp, storage, loss, ssim_rec, ssim_zo
     if "FFX" in args.tasks and cosine_ffx is not None:
         display += '\tcosine_ffx {cosine_ffx.val:.3f} ({cosine_ffx.avg:.3f})'.format(cosine_ffx = cosine_ffx)
     
-    if "HiFiC" in args.tasks:
+    if args.default_task in args.tasks:
         display += '\n'
         display += "Rate-Distortion:\n"
         display += "Weighted Rate: {:.3f} | Perceptual: {:.3f} | Rate Penalty: {:.3f}".format(storage['weighted_rate'][-1], 

@@ -56,11 +56,11 @@ class Model(nn.Module):
         self.step_counter = 0
         
         self.optimal_latent = False if args.default_task in self.args.tasks else True
+
         # self.args.checkpoint = r"/home/berrani-ahmed/DL/models/hific_hi.pt"
         # self.optimal_latent = True
         # self.args.tasks = 'HiFiC'
 
-        
         if self.args.use_latent_mixture_model is True:
             self.args.latent_channels = self.args.latent_channels_DLMM
 
@@ -91,8 +91,14 @@ class Model(nn.Module):
             self.SuperDecoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
                 n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
                 self.args.sample_noise, noise_dim=self.args.noise_dim)
-        
-            self.SuperDecoder = self.load_submodel(self.SuperDecoder, self.args.checkpoint, False)
+
+            if self.optimal_latent:
+                self.SuperDecoder = self.load_submodel(self.SuperDecoder, self.args.checkpoint, False)
+            else:
+                self.logger.info('Loading baseline Zoom model')
+                self.SuperDecoder = self.load_submodel(self.SuperDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False)
+                self.SuperNet = self.load_submodel(self.SuperNet, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False)
+
 
         if "FFX" in self.args.tasks:
 
@@ -105,7 +111,12 @@ class Model(nn.Module):
                 n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
                 self.args.sample_noise, noise_dim=self.args.noise_dim)
 
-            self.FaceDecoder = self.load_submodel(self.FaceDecoder, self.args.checkpoint,False)
+            if self.optimal_latent:
+                self.FaceDecoder = self.load_submodel(self.FaceDecoder, self.args.checkpoint,False)
+            else:
+                self.logger.info('Loading baseline FFX model')
+                self.FaceDecoder = self.load_submodel(self.FaceDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False)
+                self.MobFaceDecoder = self.load_submodel(self.MobFaceDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False)
 
             #Non Trainable
             self.MobileFaceNet = mobilefacenet.load_mobileface(freeze = True)
@@ -116,7 +127,7 @@ class Model(nn.Module):
         self.Decoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
             n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
             self.args.sample_noise, noise_dim=self.args.noise_dim)
-        self.Decoder = self.load_submodel(self.Decoder, self.args.checkpoint,True)   # Load pretrained HiFI weights 
+        self.Decoder = self.load_submodel(self.Decoder, self.args.checkpoint, True)   # Load pretrained HiFI weights 
 
         if self.args.use_latent_mixture_model is True:
             self.Hyperprior = hyperprior.HyperpriorDLMM(bottleneck_capacity=self.args.latent_channels,
@@ -129,7 +140,7 @@ class Model(nn.Module):
         self.Hyperprior = self.load_submodel(self.Hyperprior, self.args.checkpoint, freeze=self.optimal_latent, sub_model = "Hyperprior")
 
         self.amortization_models = []
-        if "HiFiC" in self.args.tasks:
+        if self.args.default_task in self.args.tasks:
             self.amortization_models.append(self.Encoder)
             self.amortization_models.extend(self.Hyperprior.amortization_models)
         if "Zoom" in self.args.tasks:
@@ -166,7 +177,7 @@ class Model(nn.Module):
     
 
 
-    def load_submodel(self, model,path,freeze=True,sub_model='Generator'):
+    def load_submodel(self, model, path, freeze=True, sub_model='Generator'):
         """ Loading the pretrained weights from the HIFI ckpt to the Generator 
         
         path : path of HIFI ckpt

@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 
+import os 
+
 """
 Default arguments from [1]. Entries can be manually overriden via
 command line arguments in `train.py`.
@@ -23,13 +25,14 @@ class Datasets(object):
     JETS = 'jetimages'
 
 class DatasetPaths(object):
-    LFWPeople = "../lfw" #'/home/bellelbn/DL/datasets/lfw'
+    LFWPeople = "/home/sidahmed/datapart/lfw" #'/home/bellelbn/DL/datasets/lfw'
     OPENIMAGES = 'data/openimages'
     CITYSCAPES = ''
     JETS = ''
 
 class directories(object):
     experiments = 'experiments'
+    baseline_experiments = os.path.join(experiments, "baseline")
 
 class args(object):
     """
@@ -40,7 +43,7 @@ class args(object):
     n_epochs = 8
     n_steps = 1e6
     batch_size = 32
-    log_interval = 5
+    log_interval = 100
     save_interval = 50000
     gpu = 0
     multigpu = True
@@ -81,7 +84,7 @@ class args(object):
     ignore_schedule = False
 
     # match target rate to lambda_A coefficient
-    regime = 'low'  # -> 0.14
+    regime = 'high'  # -> 0.45
     target_rate_map = dict(low=0.14, med=0.3, high=0.45)
     lambda_A_map = dict(low=2**1, med=2**0, high=2**(-1))
     target_rate = target_rate_map[regime]
@@ -93,9 +96,9 @@ class args(object):
     latent_channels_DLMM = 64
     
     default_task = "HiFiC"
-    image_dir = "../jpegai_test"
-    checkpoint = "../models/hific_hi.pt"
-
+    image_dir = "/home/sidahmed/datapart/jpegai_test"
+    checkpoint = "/home/sidahmed/datapart/models/hific_hi.pt"
+    
 """
 Specialized configs
 """

@@ -8,7 +8,7 @@ import json
 import os, time, datetime
 import logging
 import itertools
-
+from default_config import directories
 from collections import OrderedDict
 from torchvision.utils import save_image
 
@@ -116,13 +116,20 @@ def setup_generic_signature(args, special_info):
     else:
         args.name = '{}_{}_{}'.format(args.dataset, special_info, time_signature)
 
-    print(args.name)
-    args.snapshot = os.path.join('experiments', args.name)
+    if args.default_task in args.tasks:
+        print(args.name)
+        args.snapshot = os.path.join(directories.experiments, args.name)
+    else:
+        
+        args.snapshot = directories.baseline_experiments
+        if os.path.exists(args.snapshot):
+            raise FileExistsError(f"Baseline already exists: {args.snapshot}")
+        
 
     checkpoint_folder = []
     # Append the relevant strings to the list if their corresponding tasks are present
-    if "HiFiC" in args.tasks:
-        checkpoint_folder.append("HiFiC")
+    if args.default_task in args.tasks:
+        checkpoint_folder.append(args.default_task)
     if "Zoom" in args.tasks:
         checkpoint_folder.append("Zoom")
     if "FFX" in args.tasks:
@@ -130,6 +137,7 @@ def setup_generic_signature(args, special_info):
 
     # Join the components with underscores to form the final folder name
     checkpoint_folder = "_".join(checkpoint_folder)
+
 
     args.checkpoints_save = os.path.join(args.snapshot, checkpoint_folder)
     args.figures_save = os.path.join(args.snapshot, 'figures')
@@ -184,8 +192,8 @@ def save_model(model, optimizers, mean_epoch_loss, epoch, device, args, logger, 
         with open(metadata_path, 'w') as f:
             json.dump(metadata, f, indent=4, sort_keys=True)
             
-    
     model_path = os.path.join(directory, 'best_checkpoint.pt'.format(model_name, epoch, model.step_counter, timestamp))
+
     # model_path = os.path.join(directory, '{}_epoch{}_idx{}_{}.pt'.format(model_name, epoch, model.step_counter, timestamp))
 
     # if os.path.exists(model_path):
@@ -351,7 +359,7 @@ def log_summaries(args, writer, storage, loss, ssim_rec, ssim_zoom, psnr_rec, ps
 
     writer.add_scalar('{}/loss'.format(mode), loss.avg, step)
 
-    if "HiFiC" in args.tasks:
+    if args.default_task in args.tasks:
         weighted_compression_scalars = ['compression_loss_sans_G',
                                         'weighted_rate',
                                         'perceptual',
