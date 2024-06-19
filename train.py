@@ -268,6 +268,13 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         logger.info("=" * 150)
         logger.info("\n")
 
+        if model.optimal_latent is False:
+            logger.info('===>> Evaluate the baseline tasks')
+            val_loss = eval_lfw(args, epoch, model, val_loader, device, val_writer)
+            logger.info("\n")
+            logger.info("=" * 150)
+            logger.info("\n")
+  
         for idx, (data, bpp) in enumerate(tqdm(train_loader, desc='Train'), 0):
 
             data = data.to(device, dtype=torch.float)

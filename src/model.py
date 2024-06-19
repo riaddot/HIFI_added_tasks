@@ -96,8 +96,8 @@ class Model(nn.Module):
                 self.SuperDecoder = self.load_submodel(self.SuperDecoder, self.args.checkpoint, False)
             else:
                 self.logger.info('Loading baseline Zoom model')
-                self.SuperDecoder = self.load_submodel(self.SuperDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False)
-                self.SuperNet = self.load_submodel(self.SuperNet, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False)
+                self.SuperDecoder = self.load_submodel(self.SuperDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False, sub_model="SuperDecoder")
+                self.SuperNet = self.load_submodel(self.SuperNet, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False, sub_model="SuperNet")
 
 
         if "FFX" in self.args.tasks:
@@ -115,8 +115,8 @@ class Model(nn.Module):
                 self.FaceDecoder = self.load_submodel(self.FaceDecoder, self.args.checkpoint,False)
             else:
                 self.logger.info('Loading baseline FFX model')
-                self.FaceDecoder = self.load_submodel(self.FaceDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False)
-                self.MobFaceDecoder = self.load_submodel(self.MobFaceDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False)
+                self.FaceDecoder = self.load_submodel(self.FaceDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False, sub_model="FaceDecoder")
+                self.MobFaceDecoder = self.load_submodel(self.MobFaceDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False, sub_model="MobFaceDecoder")
 
             #Non Trainable
             self.MobileFaceNet = mobilefacenet.load_mobileface(freeze = True)
@@ -246,6 +246,7 @@ class Model(nn.Module):
         total_qbpp = hyperinfo.total_qbpp
 
         # Use quantized latents as input to G
+        self.Decoder.eval()
         reconstruction = self.Decoder(latents_quantized)
         
         if self.args.normalize_input_image is True:
@@ -332,7 +333,9 @@ class Model(nn.Module):
         # Encoder forward pass
         x_face = self.FaceDecoder(qlatent)
         
-        emb_pred = self.MobileFaceNet(center_crop(x_face))
+        emb_pred = self.MobFaceDecoder(center_crop(x_face))
+
+        self.MobileFaceNet.eval()
         emb_gt = self.MobileFaceNet(center_crop(x))
 
         # if self.model_mode == ModelModes.EVALUATION and (self.training is False):
