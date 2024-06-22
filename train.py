@@ -203,8 +203,6 @@ def eval_lfw(args, epoch, model, val_loader, device, writer):
 
             losses, intermediates = model(data, return_intermediates=True, writeout=True)
 
-            # val_loss.update(losses["compression"].item())
-
             update_performance(args, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, storage)
 
             if idx % 100 == 0:
@@ -212,9 +210,10 @@ def eval_lfw(args, epoch, model, val_loader, device, writer):
 
         print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
 
-        utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
+        if writer is not None:
+            utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
 
-        return val_loss.avg
+        return val_loss.avg, ssim_rec_val.avg, ssim_zoom_val.avg, cosine_ffx_val.avg
 
 
 
@@ -245,6 +244,15 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
     scheduler_amortization = LambdaLR(amortization_opt, lambda_lr)
     scheduler_hyperlatent_likelihood = LambdaLR(hyperlatent_likelihood_opt, lambda_lr)
     
+    if args.norm_loss:
+        val_loss, a, b, c = eval_lfw(args, 0, model, val_loader, device, None)
+        model.a = a
+        model.b = b
+        model.c = c
+
+        logger.info("Loss normalizatin weights : a {}, b {}, c {}".format(a, b, c))
+
+
     for epoch in trange(args.n_epochs, desc='Epoch'):
         
         storage = model.storage_train
@@ -258,23 +266,13 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
 
         epoch_loss, epoch_val_loss = [], []  
         epoch_start_time = time.time()
-        
-        # if epoch > 0:
-        #     ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
-        
+
         model.train()
 
         logger.info("\n")
         logger.info("=" * 150)
         logger.info("\n")
-
-        if model.optimal_latent is False:
-            logger.info('===>> Evaluate the baseline tasks')
-            val_loss = eval_lfw(args, epoch, model, val_loader, device, val_writer)
-            logger.info("\n")
-            logger.info("=" * 150)
-            logger.info("\n")
-  
+        
         for idx, (data, bpp) in enumerate(tqdm(train_loader, desc='Train'), 0):
 
             data = data.to(device, dtype=torch.float)
@@ -321,51 +319,16 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
             # utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, mode = 'lfw', use_discriminator=model.use_discriminator)
 
             if model.step_counter % args.log_interval == 1:
-                
-                # epoch_loss.append(compression_loss.item())
-                # mean_epoch_loss = np.mean(epoch_loss)
-
-                # best_loss = utils.log(model, storage, epoch, idx, mean_epoch_loss, compression_loss.item(),
-                #                 best_loss, start_time, epoch_start_time, batch_size=data.shape[0],
-                #                 avg_bpp=bpp.mean().item(), logger=logger, writer=train_writer)
-                # try:
-                #     val_data, val_bpp = next(val_loader_iter)
-                #     # jpeg_val_data, jpeg_val_bpp = next(jpeg_loader_iter)
-                # except StopIteration:
-                #     val_loader_iter = iter(val_loader)
-                #     val_data, val_bpp = next(val_loader_iter)
-
-                # best_val_loss, epoch_val_loss = val(args, model, epoch, idx, data, val_data, val_bpp, device, epoch_val_loss, storage_val,
-                #      best_val_loss, start_time, epoch_start_time, logger, train_writer, val_writer)
-
-                # with open(os.path.join(args.storage_save, 'storage_{}_tmp.pkl'.format(args.name)), 'wb') as handle:
-                #     pickle.dump(storage, handle, protocol=pickle.HIGHEST_PROTOCOL)
-
-                # model.train()
-
-                # LR scheduling
-                # utils.update_lr(args, amortization_opt, epoch, logger)
-                # utils.update_lr(args, hyperlatent_likelihood_opt, epoch, logger)
-
-                # if model.use_discriminator is True:
-                #     utils.update_lr(args, disc_opt, model.step_counter, logger)
-
-                # if model.step_counter > args.n_steps:
-                #     logger.info('Reached step limit [args.n_steps = {}]'.format(args.n_steps))
-                #     break
-                
                 print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
 
-            # if (idx % args.save_interval == 1) and (idx > args.save_interval):
-            #     ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
-            
+
         # End epoch
         print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
 
         # Plot on Tensorboard per Epoch
         utils.log_summaries(args, train_writer, storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
 
-        val_loss = eval_lfw(args, epoch, model, val_loader, device, val_writer)
+        val_loss, *_ = eval_lfw(args, epoch, model, val_loader, device, val_writer)
         
         if val_loss < best_val_loss:
             logger.info('===>> Loss imporved from {:.3f} to {:.3f}'.format(best_val_loss, val_loss))
@@ -464,6 +427,7 @@ if __name__ == '__main__':
     general.add_argument("-save_intv", "--save_interval", type=int, default=hific_args.save_interval, help="Number of steps between checkpoints.")
     general.add_argument("-multigpu", "--multigpu", help="Toggle data parallel capability using torch DataParallel", action="store_true")
     general.add_argument("-norm", "--normalize_input_image", help="Normalize input images to [-1,1]", action="store_true")
+    general.add_argument("-lnorm", "--norm_loss", help="Normalize the global loss", action="store_true")
     general.add_argument('-bs', '--batch_size', type=int, default=hific_args.batch_size, help='input batch size for training')
     general.add_argument('--save', type=str, default='experiments', help='Parent directory for stored information (checkpoints, logs, etc.)')
     general.add_argument("-lt", "--likelihood_type", choices=('gaussian', 'logistic'), default='gaussian', help="Likelihood model for latents.")

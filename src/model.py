@@ -57,6 +57,11 @@ class Model(nn.Module):
         
         self.optimal_latent = False if args.default_task in self.args.tasks else True
 
+        if self.args.norm_loss:
+            self.a = 1
+            self.b = 1
+            self.c = 1
+
         # self.args.checkpoint = r"/home/berrani-ahmed/DL/models/hific_hi.pt"
         # self.optimal_latent = True
         # self.args.tasks = 'HiFiC'
@@ -83,7 +88,6 @@ class Model(nn.Module):
         self.Encoder = self.load_submodel(self.Encoder, self.args.checkpoint, freeze = self.optimal_latent, sub_model = 'Encoder')
 
         if "Zoom" in self.args.tasks:
-
             self.logger.info('Zoom pipeline added to the framework')
             #Trainable
             self.SuperNet = Superlatent.AdaptEDSR(num_blocks = 16, ResBlocks_channels = 64)
@@ -98,7 +102,6 @@ class Model(nn.Module):
                 self.logger.info('Loading baseline Zoom model')
                 self.SuperDecoder = self.load_submodel(self.SuperDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False, sub_model="SuperDecoder")
                 self.SuperNet = self.load_submodel(self.SuperNet, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False, sub_model="SuperNet")
-
 
         if "FFX" in self.args.tasks:
 
@@ -597,7 +600,9 @@ class Model(nn.Module):
             
         if not(self.optimal_latent):
             compression_model_loss, ssim_rec = self.compression_loss(intermediates, hyperinfo)
-            
+            if self.args.norm_loss:
+                ssim_rec /= self.a
+
             reconstruction = intermediates.reconstruction
             psnr = metrics.psnr((reconstruction + 1) / 2, (x + 1) / 2, 1, lib = "torch")
             
@@ -609,6 +614,8 @@ class Model(nn.Module):
 
         if "Zoom" in self.args.tasks:
             zoom_loss = self.zoom_loss(reconst_zoom, x_hr)
+            if self.args.norm_loss:
+                zoom_loss /= self.b
             compression_model_loss += zoom_loss
 
             psnr = metrics.psnr((reconst_zoom + 1) / 2, (x_hr + 1) / 2, 1, lib = "torch")
@@ -619,6 +626,8 @@ class Model(nn.Module):
 
         if "FFX" in self.args.tasks:
             ffx_loss = self.ffx_loss(emb_gt, emb_pred)
+            if self.args.norm_loss:
+                ffx_loss /= self.c
             compression_model_loss += ffx_loss
 
             # if (self.step_counter % self.log_interval == 1):
