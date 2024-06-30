@@ -114,7 +114,17 @@ def setup_generic_signature(args, special_info):
     if args.name is not None:
         args.name = '{}_{}_{}_{}'.format(args.name, args.dataset, special_info, time_signature)
     else:
-        args.name = '{}_{}_{}'.format(args.dataset, special_info, time_signature)
+        name = [args.dataset, special_info]
+        if args.norm_loss:
+            name.append("ln")
+        if args.test_task:
+            name.append("test_task")
+        
+        name.append(time_signature)
+
+        name = "_".join(name)
+        args.name = name #'{}_{}_{}'.format(args.dataset, special_info, time_signature)
+
 
     if args.default_task in args.tasks:
         print(args.name)
@@ -193,11 +203,6 @@ def save_model(model, optimizers, mean_epoch_loss, epoch, device, args, logger, 
             json.dump(metadata, f, indent=4, sort_keys=True)
             
     model_path = os.path.join(directory, 'best_checkpoint.pt'.format(model_name, epoch, model.step_counter, timestamp))
-
-    # model_path = os.path.join(directory, '{}_epoch{}_idx{}_{}.pt'.format(model_name, epoch, model.step_counter, timestamp))
-
-    # if os.path.exists(model_path):
-    #     model_path = os.path.join(directory, '{}_epoch{}_idx{}_{:%Y_%m_%d_%H:%M:%S}.pt'.format(model_name, epoch, model.step_counter, datetime.datetime.now()))
 
     save_dict = {   'model_state_dict': model.module.state_dict() if args.multigpu is True else model.state_dict(),
                     'compression_optimizer_state_dict': optimizers['amort'].state_dict(),
@@ -391,12 +396,12 @@ def log_summaries(args, writer, storage, loss, ssim_rec, ssim_zoom, psnr_rec, ps
         writer.add_scalar('{}/ssim_rec_avg'.format(mode), ssim_rec.avg, step)
         writer.add_scalar('{}/psnr_rec_avg'.format(mode), psnr_rec.avg, step)
 
-    if "Zoom" in args.tasks:
+    if "Zoom" in args.tasks or args.test_task:
         writer.add_scalar('{}/ssim_zoom_avg'.format(mode), ssim_zoom.avg, step)
         writer.add_scalar('{}/psnr_zoom_avg'.format(mode), psnr_zoom.avg, step)
 
         
-    if "FFX" in args.tasks and cosine_ffx is not None:
+    if ("FFX" in args.tasks or args.test_task) and cosine_ffx is not None:
         writer.add_scalar('{}/cosine_ffx_avg'.format(mode), cosine_ffx.avg, step)
 
 

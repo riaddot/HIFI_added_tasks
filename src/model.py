@@ -39,7 +39,7 @@ Disc_out= namedtuple("disc_out",
 
 class Model(nn.Module):
 
-    def __init__(self, args, logger, storage_train=defaultdict(list), storage_val=defaultdict(list), model_mode=ModelModes.TRAINING, 
+    def __init__(self, args, logger, storage_train=defaultdict(list), storage_val=defaultdict(list), storage_test=defaultdict(list), model_mode=ModelModes.TRAINING, 
             model_type=ModelTypes.COMPRESSION):
         super(Model, self).__init__()
 
@@ -53,18 +53,22 @@ class Model(nn.Module):
         self.log_interval = args.log_interval
         self.storage_train = storage_train
         self.storage_val = storage_val
+        self.storage_test = storage_test
         self.step_counter = 0
-        
+        self.val_data = "lfw"
+        # self.args.checkpoint = r"/home/sidahmed/datapart/hific_hi.pt"
+        # self.optimal_latent = True
+        # self.args.default_task = 'HiFiC'
+        # self.args.tasks = ['HiFiC']
+        # self.args.norm_loss = False
+        # self.args.test_task = False
+
         self.optimal_latent = False if args.default_task in self.args.tasks else True
 
         if self.args.norm_loss:
             self.a = 1
             self.b = 1
             self.c = 1
-
-        # self.args.checkpoint = r"/home/berrani-ahmed/DL/models/hific_hi.pt"
-        # self.optimal_latent = True
-        # self.args.tasks = 'HiFiC'
 
         if self.args.use_latent_mixture_model is True:
             self.args.latent_channels = self.args.latent_channels_DLMM
@@ -87,6 +91,7 @@ class Model(nn.Module):
         
         self.Encoder = self.load_submodel(self.Encoder, self.args.checkpoint, freeze = self.optimal_latent, sub_model = 'Encoder')
 
+        
         if "Zoom" in self.args.tasks:
             self.logger.info('Zoom pipeline added to the framework')
             #Trainable
@@ -98,6 +103,13 @@ class Model(nn.Module):
 
             if self.optimal_latent:
                 self.SuperDecoder = self.load_submodel(self.SuperDecoder, self.args.checkpoint, False)
+            
+            elif self.args.test_task:
+                self.logger.info('Loading pretrained Zoom model')
+                self.SuperDecoder = self.load_submodel(self.SuperDecoder, os.path.join(self.args.hific_zoom, "best_checkpoint.pt"), True, sub_model="SuperDecoder")
+                self.SuperNet = self.load_submodel(self.SuperNet, os.path.join(self.args.hific_zoom, "best_checkpoint.pt"), True, sub_model="SuperNet")
+                self.Encoder = self.load_submodel(self.Encoder, os.path.join(self.args.hific_zoom, "best_checkpoint.pt"), True, sub_model="Encoder")
+
             else:
                 self.logger.info('Loading baseline Zoom model')
                 self.SuperDecoder = self.load_submodel(self.SuperDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False, sub_model="SuperDecoder")
@@ -115,7 +127,14 @@ class Model(nn.Module):
                 self.args.sample_noise, noise_dim=self.args.noise_dim)
 
             if self.optimal_latent:
-                self.FaceDecoder = self.load_submodel(self.FaceDecoder, self.args.checkpoint,False)
+                self.FaceDecoder = self.load_submodel(self.FaceDecoder, self.args.checkpoint, False)
+
+            elif self.args.test_task :
+                self.logger.info('Loading pretrained FFX model')
+                self.FaceDecoder = self.load_submodel(self.FaceDecoder, os.path.join(self.args.hific_ffx, "best_checkpoint.pt"), True, sub_model="FaceDecoder")
+                self.MobFaceDecoder = self.load_submodel(self.MobFaceDecoder, os.path.join(self.args.hific_ffx, "best_checkpoint.pt"), True, sub_model="MobFaceDecoder")
+                self.Encoder = self.load_submodel(self.Encoder, os.path.join(self.args.hific_ffx, "best_checkpoint.pt"), True, sub_model="Encoder")
+
             else:
                 self.logger.info('Loading baseline FFX model')
                 self.FaceDecoder = self.load_submodel(self.FaceDecoder, os.path.join(directories.baseline_experiments, "Zoom_FFX/best_checkpoint.pt"), False, sub_model="FaceDecoder")
@@ -130,7 +149,8 @@ class Model(nn.Module):
         self.Decoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
             n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
             self.args.sample_noise, noise_dim=self.args.noise_dim)
-        self.Decoder = self.load_submodel(self.Decoder, self.args.checkpoint, True)   # Load pretrained HiFI weights 
+        self.Decoder = self.load_submodel(self.Decoder, self.args.hific_checkpoint, True)   # Load pretrained HiFI weights 
+
 
         if self.args.use_latent_mixture_model is True:
             self.Hyperprior = hyperprior.HyperpriorDLMM(bottleneck_capacity=self.args.latent_channels,
@@ -142,14 +162,49 @@ class Model(nn.Module):
 
         self.Hyperprior = self.load_submodel(self.Hyperprior, self.args.checkpoint, freeze=self.optimal_latent, sub_model = "Hyperprior")
 
+
+        if self.args.test_task:
+
+            if "Zoom" not in self.args.tasks:    
+                self.Hyperprior = self.load_submodel(self.Hyperprior, os.path.join(self.args.hific_ffx, "best_checkpoint.pt"), freeze=True, sub_model = "Hyperprior")
+
+                self.logger.info('Zoom pipeline added as test task only')
+                #Trainable
+                self.SuperNet = Superlatent.AdaptEDSR(num_blocks = 16, ResBlocks_channels = 64)
+                #Trainable
+                self.SuperDecoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
+                    n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
+                    self.args.sample_noise, noise_dim=self.args.noise_dim)
+
+            if "FFX" not in self.args.tasks:
+                self.Hyperprior = self.load_submodel(self.Hyperprior, os.path.join(self.args.hific_zoom, "best_checkpoint.pt"), freeze=True, sub_model = "Hyperprior")
+
+                self.logger.info('FFX pipeline added as test task only')
+
+                #Trainable
+                self.MobFaceDecoder = mobilefacenet.load_mobileface()
+
+                #Trainable
+                self.FaceDecoder = generator.Generator(self.image_dims, self.batch_size, C=self.args.latent_channels,
+                    n_residual_blocks=self.args.n_residual_blocks, channel_norm=self.args.use_channel_norm, sample_noise=
+                    self.args.sample_noise, noise_dim=self.args.noise_dim)
+
+                #Non Trainable
+                self.MobileFaceNet = mobilefacenet.load_mobileface(freeze = True)
+                self.MobileFaceNet.eval()
+
+
         self.amortization_models = []
-        if self.args.default_task in self.args.tasks:
+        if (self.args.default_task in self.args.tasks) and not(self.args.test_task):
+            self.logger.info("Add Encoder + Hyperprior to the optimizer")
             self.amortization_models.append(self.Encoder)
             self.amortization_models.extend(self.Hyperprior.amortization_models)
-        if "Zoom" in self.args.tasks:
+        if ("Zoom" not in self.args.tasks and self.args.test_task) or ("Zoom" in self.args.tasks and not(self.args.test_task)):
+            self.logger.info("Add Zoom to the optimizer")
             self.amortization_models.append(self.SuperNet)
             self.amortization_models.append(self.SuperDecoder)
-        if "FFX" in self.args.tasks:
+        if ("FFX" not in self.args.tasks and self.args.test_task) or ("FFX" in self.args.tasks and not(self.args.test_task)):
+            self.logger.info("Add FFX to the optimizer")
             self.amortization_models.append(self.FaceDecoder)
             self.amortization_models.append(self.MobFaceDecoder)
 
@@ -177,7 +232,25 @@ class Model(nn.Module):
         self.perceptual_loss = ps.PerceptualLoss(model='net-lin', net='alex', use_gpu=torch.cuda.is_available(), gpu_ids=[args.gpu])
 
         self.perceptual_ssim_loss
-    
+                
+
+    def load_checkpoint(self, checkpoint):
+        self.logger.info('Loading checkpoint {}'.format(checkpoint))
+
+        if self.args.default_task in self.args.tasks:
+            self.logger.info("Loading Encoder + Hyperprior pipelines")
+            self.Encoder = self.load_submodel(self.Encoder, checkpoint, False, sub_model="Encoder")
+            self.Hyperprior = self.load_submodel(self.Hyperprior, checkpoint, False, sub_model="Hyperprior")
+
+        if "Zoom" in self.args.tasks:
+            self.logger.info("Loading Zoom pipeline")
+            self.FaceDecoder = self.load_submodel(self.FaceDecoder, checkpoint, False, sub_model="FaceDecoder")
+            self.MobFaceDecoder = self.load_submodel(self.MobFaceDecoder, checkpoint, False, sub_model="MobFaceDecoder")
+
+        if "FFX" in self.args.tasks:
+            self.logger.info("Loading FFX pipeline")
+            self.SuperDecoder = self.load_submodel(self.SuperDecoder, checkpoint, False, sub_model="SuperDecoder")
+            self.SuperNet = self.load_submodel(self.SuperNet, checkpoint, False, sub_model="SuperNet")
 
 
     def load_submodel(self, model, path, freeze=True, sub_model='Generator'):
@@ -208,9 +281,13 @@ class Model(nn.Module):
 
         if self.training is True:
             storage = self.storage_train
-        else:
+        elif self.val_data == "jpegai": #self.model_mode == ModelModes.EVALUATION:
+            storage = self.storage_test
+        elif self.val_data == "lfw":
             storage = self.storage_val
-
+        else:
+            raise Exception("Precise the val data : lfw or jpegai")
+        
         if self.writeout is True:
             storage[key].append(loss)
 
@@ -227,6 +304,8 @@ class Model(nn.Module):
         Outputs
         intermediates: NamedTuple of intermediate values
         """
+
+        # x = torch.clone(input_x)
         image_dims = tuple(x.size()[1:])  # (C,H,W)
 
         if self.model_mode == ModelModes.EVALUATION and (self.training is False):
@@ -258,7 +337,7 @@ class Model(nn.Module):
         # Undo padding
         if self.model_mode == ModelModes.EVALUATION and (self.training is False):
             reconstruction = reconstruction[:, :, :image_dims[1], :image_dims[2]]
-        
+
         intermediates = Intermediates(x, reconstruction, latents_quantized, 
             total_nbpp, total_qbpp)
 
@@ -397,9 +476,8 @@ class Model(nn.Module):
         cossim_loss = 1 - cossim(emb_gt,emb_pred).mean()
         return cossim_loss
 
-    def compression_loss(self, intermediates, hyperinfo):
-        
-        x_real = intermediates.input_image
+    def compression_loss(self, x_real, intermediates, hyperinfo):
+
         x_gen = intermediates.reconstruction
 
         if self.args.normalize_input_image is True:
@@ -573,15 +651,16 @@ class Model(nn.Module):
         
         intermediates, hyperinfo = self.compression_forward(x)
 
-        if "Zoom" in self.args.tasks:
+        if "Zoom" in self.args.tasks or self.args.test_task:
             reconst_zoom = self.zoom_forward(x_hr, intermediates)
-        if "FFX" in self.args.tasks:
+        if "FFX" in self.args.tasks or self.args.test_task:
             emb_gt, emb_pred = self.ffx_forward(x, intermediates)
 
         if self.model_mode == ModelModes.EVALUATION:
             reconstruction = intermediates.reconstruction
 
-            compression_model_loss, _ = self.compression_loss(intermediates, hyperinfo)
+            # compression_model_loss, _ = self.compression_loss(intermediates, hyperinfo)
+            rec_compression_loss = self.hific_metric(x, intermediates, hyperinfo)
 
             if self.args.normalize_input_image is True:
                 # [-1.,1.] -> [0.,1.]
@@ -594,45 +673,31 @@ class Model(nn.Module):
             if "Zoom" in self.args.tasks:
                 reconst_zoom = torch.clamp(reconst_zoom, min=0., max=1.)
 
+                zoom_loss = self.zoom_metric(x_hr, reconst_zoom)
+
                 return [reconstruction, reconst_zoom], intermediates.q_bpp
             
             return reconstruction, intermediates.q_bpp
-            
-        if not(self.optimal_latent):
-            compression_model_loss, ssim_rec = self.compression_loss(intermediates, hyperinfo)
-            if self.args.norm_loss:
-                ssim_rec /= self.a
-
-            reconstruction = intermediates.reconstruction
-            psnr = metrics.psnr((reconstruction + 1) / 2, (x + 1) / 2, 1, lib = "torch")
-            
-            # if (self.step_counter % self.log_interval == 1):
-            self.store_loss('perceptual rec', ssim_rec.item())
-            self.store_loss('psnr rec', psnr.item())
+        
+        rec_compression_loss = self.hific_metric(x, intermediates, hyperinfo)
+    
+        if not(self.optimal_latent) and not(self.args.test_task):
+            compression_model_loss = rec_compression_loss
         else : 
             compression_model_loss = 0
 
-        if "Zoom" in self.args.tasks:
-            zoom_loss = self.zoom_loss(reconst_zoom, x_hr)
-            if self.args.norm_loss:
-                zoom_loss /= self.b
+
+        zoom_loss = self.zoom_metric(x_hr, reconst_zoom)
+
+        if "Zoom" in self.args.tasks or self.args.test_task:
             compression_model_loss += zoom_loss
+        
+        
+        ffx_loss = self.ffx_metric(emb_gt, emb_pred)
 
-            psnr = metrics.psnr((reconst_zoom + 1) / 2, (x_hr + 1) / 2, 1, lib = "torch")
-
-            # if (self.step_counter % self.log_interval == 1):
-            self.store_loss('perceptual zoom', zoom_loss.item())
-            self.store_loss('psnr zoom', psnr.item())
-
-        if "FFX" in self.args.tasks:
-            ffx_loss = self.ffx_loss(emb_gt, emb_pred)
-            if self.args.norm_loss:
-                ffx_loss /= self.c
+        if "FFX" in self.args.tasks or self.args.test_task:
             compression_model_loss += ffx_loss
-
-            # if (self.step_counter % self.log_interval == 1):
-            self.store_loss('cosine sim', ffx_loss.item())
-
+        
         if self.use_discriminator is True:
             # Only send gradients to generator when training generator via
             # `train_generator` flag
@@ -651,6 +716,37 @@ class Model(nn.Module):
             return losses, intermediates
         else:
             return losses
+
+    def hific_metric(self, x, intermediates, hyperinfo):
+        rec_compression_loss, ssim_rec = self.compression_loss(x, intermediates, hyperinfo)
+        if self.args.norm_loss:
+            ssim_rec /= self.a
+
+        reconstruction = intermediates.reconstruction
+        psnr = metrics.psnr((reconstruction + 1) / 2, (x + 1) / 2, 1, lib = "torch")
+        
+        # if (self.step_counter % self.log_interval == 1):
+        self.store_loss('perceptual rec', ssim_rec.item())
+        self.store_loss('psnr rec', psnr.item())
+        return rec_compression_loss
+
+    def ffx_metric(self, emb_gt, emb_pred):
+        ffx_loss = self.ffx_loss(emb_gt, emb_pred)
+        if self.args.norm_loss:
+                ffx_loss /= self.c
+        self.store_loss('cosine sim', ffx_loss.item())
+        return ffx_loss
+
+    def zoom_metric(self, x_hr, reconst_zoom):
+        zoom_loss = self.zoom_loss(reconst_zoom, x_hr)
+        if self.args.norm_loss:
+            zoom_loss /= self.b
+        
+        psnr = metrics.psnr((reconst_zoom + 1) / 2, (x_hr + 1) / 2, 1, lib = "torch")
+
+        self.store_loss('perceptual zoom', zoom_loss.item())
+        self.store_loss('psnr zoom', psnr.item())
+        return zoom_loss
 
 if __name__ == '__main__':
 

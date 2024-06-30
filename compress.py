@@ -20,6 +20,10 @@ from src.loss.perceptual_similarity import perceptual_loss as ps
 from default_config import hific_args, mse_lpips_args, directories, ModelModes, ModelTypes
 from default_config import args as default_args
 
+
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
+
 File = namedtuple('File', ['original_path', 'compressed_path',
                            'compressed_num_bytes', 'bpp'])
 
@@ -116,8 +120,11 @@ def compress_and_decompress(args):
     loaded_args_d, args_d = dictify(loaded_args), dictify(args)
     loaded_args_d.update(args_d)
     args = utils.Struct(**loaded_args_d)
+
+    args.normalize_input_image = True
     # args = utils.setup_generic_signature(args, special_info=args.model_type)
     logger.info(loaded_args_d)
+    
     
 
     # Build probability tables
@@ -165,9 +172,6 @@ def compress_and_decompress(args):
 
             if args.normalize_input_image is True:
                 # [-1., 1.] -> [0., 1.]
-                # print("*" * 100)
-                # print("Normalize -1, 1 ---> 0, 1")
-                # print("*" * 100)
                 data = (data + 1.) / 2.
 
             # perceptual_loss = perceptual_loss_fn.forward(reconstruction, data, normalize=True)
@@ -176,9 +180,10 @@ def compress_and_decompress(args):
 
             if args.metrics is True:
                 # [0., 1.] -> [0., 255.]
+                
                 psnr = metrics.psnr(reconstruction.cpu().numpy() * max_value, data.cpu().numpy() * max_value, max_value)
                 ms_ssim = MS_SSIM_func(reconstruction * max_value, data * max_value)
-                PSNR_total[n:n + B] = torch.Tensor(psnr)
+                PSNR_total[n:n + B] = torch.tensor(psnr)
                 MS_SSIM_total[n:n + B] = ms_ssim.data
 
             for subidx in range(reconstruction.shape[0]):
@@ -235,7 +240,7 @@ def main(**kwargs):
     parser = argparse.ArgumentParser(description=description,
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
     parser.add_argument("-ckpt", "--checkpoint", type=str, default = hific_args.checkpoint, help="Path to model to be restored")
-    parser.add_argument("-i", "--image_dir", type=str, default='data/originals',
+    parser.add_argument("-i", "--image_dir", type=str, default=hific_args.image_dir,
         help="Path to directory containing images to compress")
     parser.add_argument("-o", "--output_dir", type=str, default='data/reconstructions', 
         help="Path to directory to store output images")
@@ -247,7 +252,20 @@ def main(**kwargs):
 
     parser.add_argument('-t', '--tasks', choices=['Zoom','FFX'], nargs='+', default=hific_args.default_task, help="Choose which task to add into the MTL framework")
 
-    args = parser.parse_args()
+    cmd_args = parser.parse_args()
+
+    args = mse_lpips_args
+
+    # Override default arguments from config file with provided command line arguments
+    dictify = lambda x: dict((n, getattr(x, n)) for n in dir(x) if not (n.startswith('__') or 'logger' in n))
+    args_d, cmd_args_d = dictify(args), vars(cmd_args)
+    args_d.update(cmd_args_d)
+    args = utils.Struct(**args_d)
+    args = utils.setup_generic_signature(args, special_info=args.model_type)
+    args.target_rate = args.target_rate_map[args.regime]
+    args.lambda_A = args.lambda_A_map[args.regime]
+    args.n_steps = int(args.n_steps)
+
 
     input_images = glob.glob(os.path.join(args.image_dir, '*.jpg'))
     input_images += glob.glob(os.path.join(args.image_dir, '*.png'))

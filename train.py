@@ -32,17 +32,17 @@ from src.helpers import utils, datasets
 from default_config import hific_args, mse_lpips_args, directories, ModelModes, ModelTypes
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+
 # go fast boi!!
 torch.backends.cudnn.benchmark = True
 
-def create_model(args, device, logger, storage, storage_test):
+def create_model(args, device, logger, storage, storage_val, storage_test):
 
     start_time = time.time()
-    model = Model(args, logger, storage, storage_test, model_type=args.model_type)
-    logger.info(model)
+    model = Model(args, logger, storage, storage_val, storage_test, model_type=args.model_type)
+    # logger.info(model)
     logger.info('Trainable parameters:')
-    
     for n, p in model.named_parameters():
         logger.info('{} - {}'.format(n, p.shape))
 
@@ -117,73 +117,7 @@ def load_generator(model,path):
     return model.load_state_dict(new_state_dict,strict=False)
 
 
-
-
-def eval_jpegai(model, image_dir):
-    
-    ssim_rec = utils.AverageMeter()
-    ssim_zoom = utils.AverageMeter()
-    
-    psnr_rec = utils.AverageMeter()
-    psnr_zoom = utils.AverageMeter()
-
-    model.eval()
-
-    images = glob.glob(os.path.join(image_dir, "*.png"))
-    with torch.no_grad():
-        for i, img_name in enumerate(tqdm(images)):
-            image = Image.open(img_name)
-
-            image_array = np.array(image)
-            image_array = image_array.transpose(2,0,1)
-            
-            image_array = image_array / 255.0
-            image_array = (image_array-0.5)/0.5
-            image = torch.zeros(1,3, image_array.shape[1], image_array.shape[2])
-            tensor_img = torch.from_numpy(image_array)
-            image[0] = tensor_img
-
-            image = F.upsample(image, size=(image.size(2)//2, image.size(3)//2), mode='bicubic')
-            image = image.to(device)
-            # losses = model(image)
-            # model.model_mode = 'validation'
-            losses = model(image, return_intermediates=False, writeout=False)
-
-            compression_loss = losses['compression'].item()
-
-            if args.default_task in args.tasks:
-                
-                ssim = losses['perceptual rec']
-                ssim_rec.update(ssim, image.size(0))
-
-                psnr = losses['psnr rec']
-                psnr_rec.update(psnr, image.size(0))
-
-            if "Zoom" in args.tasks:
-                ssim = losses['perceptual zoom']
-                ssim_zoom.update(ssim, image.size(0))
-
-                psnr = losses['psnr zoom']
-                psnr_zoom.update(psnr.item(), image.size(0))
-                
-            if i % 5 == 0:
-                logger.info('Test_JPEGAI: [{0}/{1}]\t'
-                        'psnr_rec {psnr_rec.val:.4f} ({psnr_rec.avg:.4f})\t'
-                        # 'mse_rec {mse_rec.val:.4f} ({mse_rec.avg:.4f})\t'
-                        'ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})\t'.format(
-                        i, len(images), psnr_rec = psnr_rec, ssim_rec = ssim_rec))
-
-        logger.info('Test_JPEGAI: [{0}/{1}]\t'
-                    'psnr_rec {psnr_rec.val:.4f} ({psnr_rec.avg:.4f})\t'
-                    # 'mse_rec {mse_rec.val:.4f} ({mse_rec.avg:.4f})\t'
-                    'ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})\t'.format(
-                    i+1, len(images), psnr_rec = psnr_rec, ssim_rec = ssim_rec))
-
-        
-        # return psnr_rec.avg, ssim_rec.avg
-
-
-def eval_lfw(args, epoch, model, val_loader, device, writer):
+def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "lfw"):
 
     val_loss = utils.AverageMeter()
     ssim_rec_val = utils.AverageMeter()
@@ -194,26 +128,52 @@ def eval_lfw(args, epoch, model, val_loader, device, writer):
 
     model.eval()
 
-    storage = model.storage_val
+    model.val_data = dataset
 
     with torch.no_grad():
-        for idx, (data, bpp) in enumerate(tqdm(val_loader, desc='Val'), 0):
+        if dataset == "lfw":
+            
+            storage = model.storage_val
 
-            data = data.to(device, dtype=torch.float)
+            for idx, (data, bpp) in enumerate(tqdm(val_loader, desc='Val'), 0):
 
-            losses, intermediates = model(data, return_intermediates=True, writeout=True)
+                data = data.to(device, dtype=torch.float)
 
-            update_performance(args, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, storage)
+                losses, intermediates = model(data, return_intermediates=True, writeout=True)
 
-            if idx % 100 == 0:
-                print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
+                update_performance(args, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, storage)
 
-        print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
+                # if idx % 100 == 0:
+                #     print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
 
-        if writer is not None:
-            utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
+        elif dataset == "jpegai":
+            
+            storage = model.storage_test
+            model.model_mode = ModelModes.EVALUATION
 
-        return val_loss.avg, ssim_rec_val.avg, ssim_zoom_val.avg, cosine_ffx_val.avg
+            device = torch.device("cpu")
+            model.to(device)
+            for idx, (data, bpp, filename) in enumerate(tqdm(val_loader, desc='Val'), 0):
+
+                data = data.to(device, dtype=torch.float)
+
+                losses, intermediates = model(data, return_intermediates=True, writeout=True)
+
+                update_performance(args, None, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, None, storage)
+                # if idx % 100 == 0:
+                #     print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
+
+            model.model_mode = ModelModes.TRAINING
+        else:
+            raise Exception("dataset {} not found. Please choose 'lfw' or 'jpegai'".format(dataset))
+    
+    
+    print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
+
+    if writer is not None:
+        utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
+
+    return val_loss.avg, ssim_rec_val.avg, ssim_zoom_val.avg, cosine_ffx_val.avg
 
 
 
@@ -244,8 +204,30 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
     scheduler_amortization = LambdaLR(amortization_opt, lambda_lr)
     scheduler_hyperlatent_likelihood = LambdaLR(hyperlatent_likelihood_opt, lambda_lr)
     
+    
+    if args.evaluate:    
+
+        model.load_checkpoint(args.checkpoint)
+        model = model.to(device)
+
+        logger.info("LFW evaluation")
+        val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
+
+        logger.info("=" * 150)
+        logger.info("\n")
+
+        logger.info("JPEGAI evaluation")
+        val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, jpeg_loader, device, None, "jpegai")
+
+        logger.info("=" * 150)
+        logger.info("\n")
+        logger.info("End of Evaluation")
+
+        return
+    
     if args.norm_loss:
-        val_loss, a, b, c = eval_lfw(args, 0, model, val_loader, device, None)
+        val_loss, a, b, c = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
+
         model.a = a
         model.b = b
         model.c = c
@@ -272,6 +254,8 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         logger.info("\n")
         logger.info("=" * 150)
         logger.info("\n")
+        
+
         
         for idx, (data, bpp) in enumerate(tqdm(train_loader, desc='Train'), 0):
 
@@ -318,8 +302,8 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
             # Plot on Tensorboard per iteration
             # utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, mode = 'lfw', use_discriminator=model.use_discriminator)
 
-            if model.step_counter % args.log_interval == 1:
-                print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
+            # if model.step_counter % args.log_interval == 1:
+            #     print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
 
 
         # End epoch
@@ -328,8 +312,9 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         # Plot on Tensorboard per Epoch
         utils.log_summaries(args, train_writer, storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
 
-        val_loss, *_ = eval_lfw(args, epoch, model, val_loader, device, val_writer)
-        
+
+        val_loss, *_ = eval_lfw_jpegai(args, epoch, model, val_loader, device, val_writer)
+
         if val_loss < best_val_loss:
             logger.info('===>> Loss imporved from {:.3f} to {:.3f}'.format(best_val_loss, val_loss))
             ckpt_path = utils.save_model(model, optimizers, mean_epoch_loss, epoch, device, args=args, logger=logger)
@@ -349,13 +334,23 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
     with open(os.path.join(args.storage_save, 'storage_{}_{:%Y_%m_%d_%H:%M:%S}.pkl'.format(args.name, datetime.datetime.now())), 'wb') as handle:
         pickle.dump(storage, handle, protocol=pickle.HIGHEST_PROTOCOL)
     
+    logger.info("=" * 150)
+    logger.info("\n")
+    logger.info("Loading best checkpoint")
+
+    model.load_checkpoint(args.checkpoint)
+    model = model.to(device)
+
+    eval_lfw_jpegai(args, 0, model, val_loader, device, None)
+    eval_lfw_jpegai(args, 0, model, jpeg_loader, device, None, "jpegai")
     logger.info("Training complete. Time elapsed: {:.3f} s. Number of steps: {}".format((time.time()-start_time), model.step_counter))
     
     return model, ckpt_path
 
 def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, store):
 
-    loss.update(store["weighted_compression_loss"][-1], args.batch_size)
+    if loss is not None:
+        loss.update(store["weighted_compression_loss"][-1], args.batch_size)
 
     if args.default_task in args.tasks:
         ssim = store['perceptual rec'][-1]
@@ -364,14 +359,14 @@ def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cos
         psnr = store['psnr rec'][-1]
         psnr_rec.update(psnr, args.batch_size)
 
-    if "Zoom" in args.tasks:
+    if "Zoom" in args.tasks or args.test_task:
         ssim = store['perceptual zoom'][-1]
         ssim_zoom.update(ssim, args.batch_size)
 
         psnr = store['psnr zoom'][-1]
         psnr_zoom.update(psnr, args.batch_size)
 
-    if "FFX" in args.tasks and cosine_ffx is not None:
+    if ("FFX" in args.tasks  or args.test_task) and cosine_ffx is not None :
         cosine = store['cosine sim'][-1]
         cosine_ffx.update(cosine, args.batch_size)
 
@@ -388,10 +383,10 @@ def print_performance(args, data_size, avg_bpp, storage, loss, ssim_rec, ssim_zo
     if args.default_task in args.tasks:
         display += '\tpsnr_rec {psnr_rec.val:.3f} ({psnr_rec.avg:.3f})\t ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})'.format(psnr_rec = psnr_rec, ssim_rec = ssim_rec)
     
-    if "Zoom" in args.tasks:
+    if "Zoom" in args.tasks or args.test_task:
         display += '\tpsnr_zoom {psnr_zoom.val:.3f} ({psnr_zoom.avg:.3f})\t ssim_zoom {ssim_zoom.val:.3f} ({ssim_zoom.avg:.3f})'.format(psnr_zoom = psnr_zoom, ssim_zoom = ssim_zoom)
           
-    if "FFX" in args.tasks and cosine_ffx is not None:
+    if ("FFX" in args.tasks or args.test_task) and cosine_ffx is not None:
         display += '\tcosine_ffx {cosine_ffx.val:.3f} ({cosine_ffx.avg:.3f})'.format(cosine_ffx = cosine_ffx)
     
     if args.default_task in args.tasks:
@@ -428,6 +423,8 @@ if __name__ == '__main__':
     general.add_argument("-multigpu", "--multigpu", help="Toggle data parallel capability using torch DataParallel", action="store_true")
     general.add_argument("-norm", "--normalize_input_image", help="Normalize input images to [-1,1]", action="store_true")
     general.add_argument("-lnorm", "--norm_loss", help="Normalize the global loss", action="store_true")
+    general.add_argument("-eval", "--evaluate", help="Evaluate the framework before training", action="store_true")
+    general.add_argument("-tt", "--test_task", help="Test task only, train a new task on freezed latent", action="store_true")
     general.add_argument('-bs', '--batch_size', type=int, default=hific_args.batch_size, help='input batch size for training')
     general.add_argument('--save', type=str, default='experiments', help='Parent directory for stored information (checkpoints, logs, etc.)')
     general.add_argument("-lt", "--likelihood_type", choices=('gaussian', 'logistic'), default='gaussian', help="Likelihood model for latents.")
@@ -451,6 +448,7 @@ if __name__ == '__main__':
         help="Number of residual blocks to use in Generator.")
     
     arch_args.add_argument('-t', '--tasks', choices=['HiFiC', 'Zoom','FFX'], nargs='+', default=hific_args.default_task, help="Choose which task to add into the MTL framework")
+
 
     # Warmstart adversarial training from autoencoder/hyperprior
     warmstart_args = parser.add_argument_group("Warmstart options")
@@ -481,6 +479,7 @@ if __name__ == '__main__':
     args.n_steps = int(args.n_steps)
 
     storage = defaultdict(list)
+    storage_val = defaultdict(list)
     storage_test = defaultdict(list)
     logger = utils.logger_setup(logpath=os.path.join(args.snapshot, 'logs.txt'), filepath=os.path.abspath(__file__))
 
@@ -492,7 +491,8 @@ if __name__ == '__main__':
     #     args, model, optimizers = utils.load_model(args.warmstart_ckpt, logger, device, 
     #         model_type=args.model_type, current_args_d=dictify(args), strict=False, prediction=False)
     # else:
-    model = create_model(args, device, logger, storage, storage_test)
+
+    model = create_model(args, device, logger, storage, storage_val, storage_test)
     model = model.to(device)
     
     multi_gpu = torch.cuda.device_count() > 1 if torch.cuda.is_available() else False
@@ -539,7 +539,7 @@ if __name__ == '__main__':
                                 batch_size=args.batch_size,
                                 logger=logger,
                                 split='test',
-                                shuffle=True,
+                                shuffle=False,
                                 normalize=args.normalize_input_image)
 
     train_loader = datasets.get_dataloaders(args.dataset,
@@ -551,7 +551,7 @@ if __name__ == '__main__':
                                 normalize=args.normalize_input_image)
 
 
-    jpeg_loader = datasets.get_dataloaders('evaluation', root=args.image_dir, batch_size=args.batch_size,
+    jpeg_loader = datasets.get_dataloaders('evaluation', root=args.image_dir, batch_size=1,
                                            logger=logger, shuffle=False, normalize=args.normalize_input_image)
 
 

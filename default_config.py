@@ -31,7 +31,7 @@ class DatasetPaths(object):
     JETS = ''
 
 class directories(object):
-    experiments = 'experiments'
+    experiments = '/home/sidahmed/datapart/jpegai_experiments/experiments_old'
     baseline_experiments = os.path.join(experiments, "baseline")
 
 class args(object):
@@ -98,6 +98,10 @@ class args(object):
     default_task = "HiFiC"
     image_dir = "/home/sidahmed/datapart/jpegai_test"
     checkpoint = "/home/sidahmed/datapart/models/hific_hi.pt"
+    hific_checkpoint = "/home/sidahmed/datapart/models/hific_hi.pt"
+
+    hific_zoom = "/home/sidahmed/datapart/jpegai_experiments/experiments/lfw_compression_2024_06_24_02_47/HiFiC_Zoom"
+    hific_ffx = "/home/sidahmed/datapart/jpegai_experiments/experiments/lfw_compression_2024_06_24_11_25/HiFiC_FFX"
     
 """
 Specialized configs

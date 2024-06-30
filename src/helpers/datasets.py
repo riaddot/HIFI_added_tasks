@@ -467,6 +467,8 @@ class LFWPeople(_LFW):
         self.class_to_idx = self._get_classes()
         self.data, self.targets = self._get_people()
 
+        self.split = split
+
     def _get_people(self) -> Tuple[List[str], List[int]]:
         data, targets = [], []
         with open(os.path.join(self.root, self.labels_file)) as f:
@@ -493,11 +495,12 @@ class LFWPeople(_LFW):
         return class_to_idx
 
     def _transforms(self):
-
-        transforms_list = [# transforms.ToPILImage(),
-                           transforms.RandomHorizontalFlip(),
-                           transforms.Resize((256, 256)),
+        
+        transforms_list = [transforms.Resize((256, 256)),
                            transforms.ToTensor()]
+        
+        if self.split is "train":
+            transforms_list += [transforms.RandomHorizontalFlip()]
 
         if self.normalize is True:
             transforms_list += [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
