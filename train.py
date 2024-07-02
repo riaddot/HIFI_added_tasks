@@ -32,7 +32,7 @@ from src.helpers import utils, datasets
 from default_config import hific_args, mse_lpips_args, directories, ModelModes, ModelTypes
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "1"
+os.environ["CUDA_VISIBLE_DEVICES"] = "0"
 
 # go fast boi!!
 torch.backends.cudnn.benchmark = True
@@ -210,11 +210,11 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         model.load_checkpoint(args.checkpoint)
         model = model.to(device)
 
-        logger.info("LFW evaluation")
-        val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
+        # logger.info("LFW evaluation")
+        # val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
 
-        logger.info("=" * 150)
-        logger.info("\n")
+        # logger.info("=" * 150)
+        # logger.info("\n")
 
         logger.info("JPEGAI evaluation")
         val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, jpeg_loader, device, None, "jpegai")

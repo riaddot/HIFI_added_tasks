@@ -31,7 +31,7 @@ class DatasetPaths(object):
     JETS = ''
 
 class directories(object):
-    experiments = '/home/sidahmed/datapart/jpegai_experiments/experiments_old'
+    experiments = '/home/sidahmed/datapart/jpegai_experiments/experiments'
     baseline_experiments = os.path.join(experiments, "baseline")
 
 class args(object):
@@ -80,7 +80,8 @@ class args(object):
     # Scheduling
     lambda_schedule = dict(vals=[2., 1.], steps=[50000])
     lr_schedule = dict(vals=[1., 0.1], steps=[500000])
-    target_schedule = dict(vals=[0.20/0.14, 1.], steps=[50000])  # Rate allowance
+    target_schedule = dict(vals=[0.20/0.14, 1.], steps=[500000])  # Rate allowance
+                                                #steps=[50000]
     ignore_schedule = False
 
     # match target rate to lambda_A coefficient

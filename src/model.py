@@ -666,8 +666,9 @@ class Model(nn.Module):
                 # [-1.,1.] -> [0.,1.]
                 reconstruction = (reconstruction + 1.) / 2.
                 if "Zoom" in self.args.tasks:
-                    reconst_zoom = (reconst_zoom + 1.) / 2.                
-                
+                    reconst_zoom = (reconst_zoom + 1.) / 2.
+                    x_hr = (x_hr + 1.) / 2.
+
             reconstruction = torch.clamp(reconstruction, min=0., max=1.)
 
             if "Zoom" in self.args.tasks:
@@ -687,15 +688,17 @@ class Model(nn.Module):
             compression_model_loss = 0
 
 
-        zoom_loss = self.zoom_metric(x_hr, reconst_zoom)
+        
 
         if "Zoom" in self.args.tasks or self.args.test_task:
+            zoom_loss = self.zoom_metric(x_hr, reconst_zoom)
             compression_model_loss += zoom_loss
         
         
-        ffx_loss = self.ffx_metric(emb_gt, emb_pred)
+        
 
         if "FFX" in self.args.tasks or self.args.test_task:
+            ffx_loss = self.ffx_metric(emb_gt, emb_pred)
             compression_model_loss += ffx_loss
         
         if self.use_discriminator is True:
