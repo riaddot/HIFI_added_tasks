@@ -151,7 +151,6 @@ class Model(nn.Module):
             self.args.sample_noise, noise_dim=self.args.noise_dim)
         self.Decoder = self.load_submodel(self.Decoder, self.args.hific_checkpoint, True)   # Load pretrained HiFI weights 
 
-
         if self.args.use_latent_mixture_model is True:
             self.Hyperprior = hyperprior.HyperpriorDLMM(bottleneck_capacity=self.args.latent_channels,
                 likelihood_type=self.args.likelihood_type, mixture_components=self.args.mixture_components, entropy_code=self.entropy_code)

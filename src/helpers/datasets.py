@@ -21,7 +21,7 @@ from torchvision.datasets.vision import VisionDataset
 DIR = os.path.abspath(os.path.dirname(__file__))
 COLOUR_BLACK = 0
 COLOUR_WHITE = 1
-NUM_DATASET_WORKERS = 4
+NUM_DATASET_WORKERS = 16
 SCALE_MIN = 0.75
 SCALE_MAX = 0.95
 DATASETS_DICT = {"lfw": "LFWPeople", "openimages": "OpenImages", "cityscapes": "CityScapes", 

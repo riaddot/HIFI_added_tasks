@@ -32,8 +32,6 @@ from src.helpers import utils, datasets
 from default_config import hific_args, mse_lpips_args, directories, ModelModes, ModelTypes
 
 
-os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-
 # go fast boi!!
 torch.backends.cudnn.benchmark = True
 
@@ -91,7 +89,7 @@ def test(args, model, epoch, idx, data, test_data, test_bpp, device, epoch_test_
         
         best_val_loss = utils.log(model, storage, epoch, idx, mean_test_loss, compression_loss.item(), 
                                      best_val_loss, start_time, epoch_start_time, 
-                                     batch_size=data.shape[0], avg_bpp=test_bpp.mean().item(),header='[TEST]', 
+                                     batch_size=data.shape[0], bpp=test_bpp.mean().item(),header='[TEST]', 
                                      logger=logger, writer=val_writer)
         
     return best_val_loss, epoch_test_loss
@@ -126,6 +124,39 @@ def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "l
     psnr_zoom_val = utils.AverageMeter()
     cosine_ffx_val = utils.AverageMeter()
 
+    compression_loss_sans_G = utils.AverageMeter()
+    weighted_rate = utils.AverageMeter()
+    perceptual = utils.AverageMeter()
+    rate_penalty = utils.AverageMeter()
+    bpp = utils.AverageMeter()
+    n_rate = utils.AverageMeter()
+    q_rate = utils.AverageMeter()
+    n_rate_latent = utils.AverageMeter()
+    q_rate_latent = utils.AverageMeter()
+    n_rate_hyperlatent = utils.AverageMeter()
+    q_rate_hyperlatent = utils.AverageMeter()
+
+
+    metrics = {
+    'loss': val_loss,
+    'ssim_rec': ssim_rec_val,
+    'ssim_zoom': ssim_zoom_val,
+    'psnr_rec': psnr_rec_val,
+    'psnr_zoom': psnr_zoom_val,
+    'cosine_ffx': cosine_ffx_val,
+    'compression_loss_sans_G' : compression_loss_sans_G,
+    'weighted_rate' : weighted_rate,
+    'perceptual' : perceptual,
+    'rate_penalty' : rate_penalty,
+    'bpp' : bpp,
+    'n_rate' : n_rate,
+    'q_rate' : q_rate,
+    'n_rate_latent' : n_rate_latent,
+    'q_rate_latent' : q_rate_latent,
+    'n_rate_hyperlatent' : n_rate_hyperlatent,
+    'q_rate_hyperlatent' : q_rate_hyperlatent
+    }
+    
     model.eval()
 
     model.val_data = dataset
@@ -140,8 +171,9 @@ def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "l
                 data = data.to(device, dtype=torch.float)
 
                 losses, intermediates = model(data, return_intermediates=True, writeout=True)
-
-                update_performance(args, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, storage)
+                storage["bpp"].append(bpp.mean().item())
+                # update_performance(args, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, storage)
+                update_performance(args, metrics, storage)
 
                 # if idx % 100 == 0:
                 #     print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
@@ -159,7 +191,12 @@ def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "l
 
                 losses, intermediates = model(data, return_intermediates=True, writeout=True)
 
-                update_performance(args, None, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, None, storage)
+                storage["bpp"].append(bpp.mean().item())
+                # update_performance(args, None, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, None, storage)
+                metrics['loss'] = None
+                metrics['cosine_ffx'] = None
+                update_performance(args, metrics, storage)
+
                 # if idx % 100 == 0:
                 #     print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
 
@@ -168,10 +205,12 @@ def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "l
             raise Exception("dataset {} not found. Please choose 'lfw' or 'jpegai'".format(dataset))
     
     
-    print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
+    # print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
+    print_performance(args, len(val_loader), metrics, idx, epoch, model.training)
 
     if writer is not None:
-        utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
+        # utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
+        utils.log_summaries(args, writer, metrics, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
 
     return val_loss.avg, ssim_rec_val.avg, ssim_zoom_val.avg, cosine_ffx_val.avg
 
@@ -210,11 +249,11 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         model.load_checkpoint(args.checkpoint)
         model = model.to(device)
 
-        # logger.info("LFW evaluation")
-        # val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
+        logger.info("LFW evaluation")
+        val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
 
-        # logger.info("=" * 150)
-        # logger.info("\n")
+        logger.info("=" * 150)
+        logger.info("\n")
 
         logger.info("JPEGAI evaluation")
         val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, jpeg_loader, device, None, "jpegai")
@@ -245,23 +284,50 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         psnr_rec_train = utils.AverageMeter()
         psnr_zoom_train = utils.AverageMeter()
         cosine_ffx_train = utils.AverageMeter()
+        compression_loss_sans_G = utils.AverageMeter()
+        weighted_rate = utils.AverageMeter()
+        perceptual = utils.AverageMeter()
+        rate_penalty = utils.AverageMeter()
+        bpp = utils.AverageMeter()
+        n_rate = utils.AverageMeter()
+        q_rate = utils.AverageMeter()
+        n_rate_latent = utils.AverageMeter()
+        q_rate_latent = utils.AverageMeter()
+        n_rate_hyperlatent = utils.AverageMeter()
+        q_rate_hyperlatent = utils.AverageMeter()
 
-        epoch_loss, epoch_val_loss = [], []  
-        epoch_start_time = time.time()
+        metrics = {
+        'loss': loss_train,
+        'ssim_rec': ssim_rec_train,
+        'ssim_zoom': ssim_zoom_train,
+        'psnr_rec': psnr_rec_train,
+        'psnr_zoom': psnr_zoom_train,
+        'cosine_ffx': cosine_ffx_train,
+        'compression_loss_sans_G': compression_loss_sans_G,
+        'weighted_rate': weighted_rate,
+        'perceptual': perceptual,
+        'rate_penalty': rate_penalty,
+        'bpp': bpp,
+        'n_rate': n_rate,
+        'q_rate': q_rate,
+        'n_rate_latent': n_rate_latent,
+        'q_rate_latent': q_rate_latent,
+        'n_rate_hyperlatent': n_rate_hyperlatent,
+        'q_rate_hyperlatent': q_rate_hyperlatent,
+        }
 
         model.train()
 
         logger.info("\n")
         logger.info("=" * 150)
         logger.info("\n")
-        
 
         
         for idx, (data, bpp) in enumerate(tqdm(train_loader, desc='Train'), 0):
 
             data = data.to(device, dtype=torch.float)
-            
-            # eval_jpegai(model, args.image_dir)
+
+            storage["bpp"].append(bpp.mean().item())
 
             try:
                 if model.use_discriminator is True:
@@ -297,21 +363,19 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
                 # else:
                     return model, None
             
-            update_performance(args, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, storage)
-
-            # Plot on Tensorboard per iteration
-            # utils.log_summaries(args, train_writer, storage, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, mode = 'lfw', use_discriminator=model.use_discriminator)
+            # update_performance(args, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, storage)
+            update_performance(args, metrics, storage)
 
             # if model.step_counter % args.log_interval == 1:
             #     print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
 
-
         # End epoch
-        print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
+        # print_performance(args, len(train_loader), bpp.mean().item(), storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, idx, epoch, model.training)
+        print_performance(args, len(train_loader), metrics, idx, epoch, model.training)
 
         # Plot on Tensorboard per Epoch
-        utils.log_summaries(args, train_writer, storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
-
+        # utils.log_summaries(args, train_writer, storage, loss_train, ssim_rec_train, ssim_zoom_train, psnr_rec_train, psnr_zoom_train, cosine_ffx_train, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
+        utils.log_summaries(args, train_writer, metrics, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
 
         val_loss, *_ = eval_lfw_jpegai(args, epoch, model, val_loader, device, val_writer)
 
@@ -341,13 +405,24 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
     model.load_checkpoint(args.checkpoint)
     model = model.to(device)
 
+    model.args.norm_loss = False
     eval_lfw_jpegai(args, 0, model, val_loader, device, None)
     eval_lfw_jpegai(args, 0, model, jpeg_loader, device, None, "jpegai")
     logger.info("Training complete. Time elapsed: {:.3f} s. Number of steps: {}".format((time.time()-start_time), model.step_counter))
     
     return model, ckpt_path
 
-def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, store):
+
+def update_performance(args, metrics, store):
+# def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, store):
+
+    loss = metrics['loss']
+    ssim_rec = metrics['ssim_rec']
+    ssim_zoom = metrics['ssim_zoom']
+    psnr_rec = metrics['psnr_rec']
+    psnr_zoom = metrics['psnr_zoom']
+    cosine_ffx = metrics['cosine_ffx']
+
 
     if loss is not None:
         loss.update(store["weighted_compression_loss"][-1], args.batch_size)
@@ -358,6 +433,19 @@ def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cos
 
         psnr = store['psnr rec'][-1]
         psnr_rec.update(psnr, args.batch_size)
+
+        metrics['compression_loss_sans_G'].update(store['compression_loss_sans_G'][-1], args.batch_size)
+        metrics['weighted_rate'].update(store['weighted_rate'][-1], args.batch_size)
+        metrics['perceptual'].update(store['perceptual'][-1], args.batch_size)
+        metrics['rate_penalty'].update(store['rate_penalty'][-1], args.batch_size)
+
+        metrics['bpp'].update(store['bpp'][-1], args.batch_size)
+        metrics['n_rate'].update(store['n_rate'][-1], args.batch_size)
+        metrics['q_rate'].update(store['q_rate'][-1], args.batch_size)
+        metrics['n_rate_latent'].update(store['n_rate_latent'][-1], args.batch_size)
+        metrics['q_rate_latent'].update(store['q_rate_latent'][-1], args.batch_size)
+        metrics['n_rate_hyperlatent'].update(store['n_rate_hyperlatent'][-1], args.batch_size)
+        metrics['q_rate_hyperlatent'].update(store['q_rate_hyperlatent'][-1], args.batch_size)
 
     if "Zoom" in args.tasks or args.test_task:
         ssim = store['perceptual zoom'][-1]
@@ -371,8 +459,16 @@ def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cos
         cosine_ffx.update(cosine, args.batch_size)
 
 
-def print_performance(args, data_size, avg_bpp, storage, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch, training):
+def print_performance(args, data_size, metrics, idx, epoch, training):
+# def print_performance(args, data_size, bpp, storage, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, idx, epoch, training):
     
+    loss = metrics['loss']
+    ssim_rec = metrics['ssim_rec']
+    ssim_zoom = metrics['ssim_zoom']
+    psnr_rec = metrics['psnr_rec']
+    psnr_zoom = metrics['psnr_zoom']
+    cosine_ffx = metrics['cosine_ffx']
+ 
     if training:
         display = '\nEPOCH: [{0}][{1}/{2}]'.format(epoch, idx, data_size)
     else:
@@ -392,13 +488,19 @@ def print_performance(args, data_size, avg_bpp, storage, loss, ssim_rec, ssim_zo
     if args.default_task in args.tasks:
         display += '\n'
         display += "Rate-Distortion:\n"
-        display += "Weighted Rate: {:.3f} | Perceptual: {:.3f} | Rate Penalty: {:.3f}".format(storage['weighted_rate'][-1], 
-                                            storage['perceptual'][-1], storage['rate_penalty'][-1])
+        display += "Weighted Rate: {:.3f} ({:.3f}) | Perceptual: {:.3f} ({:.3f}) | Rate Penalty: {:.3f} ({:.3f})".format(metrics['weighted_rate'].val, metrics['weighted_rate'].avg, 
+                                            metrics['perceptual'].val, metrics['perceptual'].avg, metrics['rate_penalty'].val, metrics['rate_penalty'].avg)
+
+        # display += "Weighted Rate: {:.3f} | Perceptual: {:.3f} | Rate Penalty: {:.3f}".format(storage['weighted_rate'][-1], 
+        #                                     storage['perceptual'][-1], storage['rate_penalty'][-1])
 
         display += '\n'
         display += "Rate Breakdown:\n"
-        display += "avg. original bpp: {:.3f} | n_bpp (total): {:.3f} | q_bpp (total): {:.3f} | n_bpp (latent): {:.3f} | q_bpp (latent): {:.3f} | n_bpp (hyp-latent): {:.3f} | q_bpp (hyp-latent): {:.3f}".format(avg_bpp, storage['n_rate'][-1], storage['q_rate'][-1], 
-                storage['n_rate_latent'][-1], storage['q_rate_latent'][-1], storage['n_rate_hyperlatent'][-1], storage['q_rate_hyperlatent'][-1])
+        display += "avg. original bpp: {:.3f} ({:.3f}) | n_bpp (total): {:.3f} ({:.3f}) | q_bpp (total): {:.3f} ({:.3f}) | n_bpp (latent): {:.3f} ({:.3f}) | q_bpp (latent): {:.3f} ({:.3f}) | n_bpp (hyp-latent): {:.3f} ({:.3f}) | q_bpp (hyp-latent): {:.3f} ({:.3f})".format(metrics['bpp'].val, metrics['bpp'].avg, metrics['n_rate'].val, metrics['n_rate'].avg, metrics['q_rate'].val, metrics['q_rate'].avg, 
+                metrics['n_rate_latent'].val, metrics['n_rate_latent'].avg, metrics['q_rate_latent'].val, metrics['q_rate_latent'].avg, metrics['n_rate_hyperlatent'].val, metrics['n_rate_hyperlatent'].avg, metrics['q_rate_hyperlatent'].val, metrics['q_rate_hyperlatent'].avg)
+
+        # display += "avg. original bpp: {:.3f} | n_bpp (total): {:.3f} | q_bpp (total): {:.3f} | n_bpp (latent): {:.3f} | q_bpp (latent): {:.3f} | n_bpp (hyp-latent): {:.3f} | q_bpp (hyp-latent): {:.3f}".format(bpp, storage['n_rate'][-1], storage['q_rate'][-1], 
+        #         storage['n_rate_latent'][-1], storage['q_rate_latent'][-1], storage['n_rate_hyperlatent'][-1], storage['q_rate_hyperlatent'][-1])
         
     display += '\n'
     
@@ -418,6 +520,7 @@ if __name__ == '__main__':
         help="Type of model - with or without GAN component")
     general.add_argument("-regime", "--regime", choices=('low','med','high'), default='high', help="Set target bit rate - Low (0.14), Med (0.30), High (0.45)")
     general.add_argument("-gpu", "--gpu", type=int, default=0, help="GPU ID.")
+    general.add_argument("-os_gpu", "--os_gpu", type=int, default=0, help="GPU ID.")
     general.add_argument("-log_intv", "--log_interval", type=int, default=hific_args.log_interval, help="Number of steps between logs.")
     general.add_argument("-save_intv", "--save_interval", type=int, default=hific_args.save_interval, help="Number of steps between checkpoints.")
     general.add_argument("-multigpu", "--multigpu", help="Toggle data parallel capability using torch DataParallel", action="store_true")
@@ -460,6 +563,8 @@ if __name__ == '__main__':
     if (cmd_args.gpu != 0) or (cmd_args.force_set_gpu is True):
         torch.cuda.set_device(cmd_args.gpu)
 
+    os.environ["CUDA_VISIBLE_DEVICES"] = str(cmd_args.os_gpu)
+
     if cmd_args.model_type == ModelTypes.COMPRESSION:
         args = mse_lpips_args
     elif cmd_args.model_type == ModelTypes.COMPRESSION_GAN:
@@ -482,15 +587,6 @@ if __name__ == '__main__':
     storage_val = defaultdict(list)
     storage_test = defaultdict(list)
     logger = utils.logger_setup(logpath=os.path.join(args.snapshot, 'logs.txt'), filepath=os.path.abspath(__file__))
-
-    # if args.warmstart is True:
-    #     assert args.warmstart_ckpt is not None, 'Must provide checkpoint to previously trained AE/HP model.'
-    #     logger.info('Warmstarting discriminator/generator from autoencoder/hyperprior model.')
-    #     if args.model_type != ModelTypes.COMPRESSION_GAN:
-    #         logger.warning('Should warmstart compression-gan model.')
-    #     args, model, optimizers = utils.load_model(args.warmstart_ckpt, logger, device, 
-    #         model_type=args.model_type, current_args_d=dictify(args), strict=False, prediction=False)
-    # else:
 
     model = create_model(args, device, logger, storage, storage_val, storage_test)
     model = model.to(device)

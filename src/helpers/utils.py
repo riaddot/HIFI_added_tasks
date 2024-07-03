@@ -195,7 +195,7 @@ def save_model(model, optimizers, mean_epoch_loss, epoch, device, args, logger, 
     args_d['timestamp'] = timestamp
     
     model_name = args.name
-    metadata_path = os.path.join(directory, 'metadata/model_{}_metadata_{}.json'.format(model_name, timestamp))
+    metadata_path = os.path.join(directory, 'metadata/model_{}_metadata.json'.format(model_name))
     makedirs(os.path.join(directory, 'metadata'))
     
     if not os.path.isfile(metadata_path):
@@ -359,7 +359,16 @@ def logger_setup(logpath, filepath, package_files=[]):
             logger.info(package_f.read())
     return logger
 
-def log_summaries(args, writer, storage, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, step, mode, use_discriminator=False):
+def log_summaries(args, writer, metrics, step, mode, use_discriminator=False):
+# def log_summaries(args, writer, storage, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, step, mode, use_discriminator=False):
+
+    
+    loss = metrics['loss']
+    ssim_rec = metrics['ssim_rec']
+    ssim_zoom = metrics['ssim_zoom']
+    psnr_rec = metrics['psnr_rec']
+    psnr_zoom = metrics['psnr_zoom']
+    cosine_ffx = metrics['cosine_ffx']
 
 
     writer.add_scalar('{}/loss'.format(mode), loss.avg, step)
@@ -374,21 +383,21 @@ def log_summaries(args, writer, storage, loss, ssim_rec, ssim_zoom, psnr_rec, ps
             'n_rate_hyperlatent', 'q_rate_hyperlatent', 'perceptual']
         gan_scalars = ['disc_loss', 'gen_loss', 'weighted_gen_loss', 'D_gen', 'D_real']
 
-        compression_loss_breakdown = dict(total_comp=storage['compression_loss_sans_G'][-1],
-                                        weighted_rate=storage['weighted_rate'][-1],
-                                        #   weighted_distortion=storage['weighted_distortion'][-1],
-                                        weighted_perceptual=storage['perceptual'][-1])
+        compression_loss_breakdown = dict(total_comp=metrics['compression_loss_sans_G'].avg,
+                                        weighted_rate=metrics['weighted_rate'].avg,
+                                        #   weighted_distortion=metrics['weighted_distortion'].avg,
+                                        weighted_perceptual=metrics['perceptual'].avg)
 
         for scalar in weighted_compression_scalars:
-            writer.add_scalar('weighted_compression/{}'.format(scalar), storage[scalar][-1], step)
+            writer.add_scalar('weighted_compression/{}'.format(scalar), metrics[scalar].avg, step)
 
         for scalar in compression_scalars:
-            writer.add_scalar('compression/{}'.format(scalar), storage[scalar][-1], step)
+            writer.add_scalar('compression/{}'.format(scalar), metrics[scalar].avg, step)
 
         if use_discriminator is True:
-            compression_loss_breakdown['weighted_gen_loss'] = storage['weighted_gen_loss'][-1]
+            compression_loss_breakdown['weighted_gen_loss'] = metrics['weighted_gen_loss'].avg
             for scalar in gan_scalars:
-                writer.add_scalar('GAN/{}'.format(scalar), storage[scalar][-1], step)
+                writer.add_scalar('GAN/{}'.format(scalar), metrics[scalar].avg, step)
 
         # Breakdown overall loss
         writer.add_scalars('compression_loss_breakdown', compression_loss_breakdown, step)
