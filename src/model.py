@@ -243,13 +243,15 @@ class Model(nn.Module):
 
         if "Zoom" in self.args.tasks:
             self.logger.info("Loading Zoom pipeline")
-            self.FaceDecoder = self.load_submodel(self.FaceDecoder, checkpoint, False, sub_model="FaceDecoder")
-            self.MobFaceDecoder = self.load_submodel(self.MobFaceDecoder, checkpoint, False, sub_model="MobFaceDecoder")
+            self.SuperDecoder = self.load_submodel(self.SuperDecoder, checkpoint, False, sub_model="SuperDecoder")
+            self.SuperNet = self.load_submodel(self.SuperNet, checkpoint, False, sub_model="SuperNet")
+            
 
         if "FFX" in self.args.tasks:
             self.logger.info("Loading FFX pipeline")
-            self.SuperDecoder = self.load_submodel(self.SuperDecoder, checkpoint, False, sub_model="SuperDecoder")
-            self.SuperNet = self.load_submodel(self.SuperNet, checkpoint, False, sub_model="SuperNet")
+            self.FaceDecoder = self.load_submodel(self.FaceDecoder, checkpoint, False, sub_model="FaceDecoder")
+            self.MobFaceDecoder = self.load_submodel(self.MobFaceDecoder, checkpoint, False, sub_model="MobFaceDecoder")
+            
 
 
     def load_submodel(self, model, path, freeze=True, sub_model='Generator'):

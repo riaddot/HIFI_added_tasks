@@ -24,7 +24,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 from torch.optim.lr_scheduler import LambdaLR
-
+from torchvision import transforms
 
 # Custom modules
 from src.model import Model
@@ -186,19 +186,28 @@ def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "l
             device = torch.device("cpu")
             model.to(device)
             for idx, (data, bpp, filename) in enumerate(tqdm(val_loader, desc='Val'), 0):
-
                 data = data.to(device, dtype=torch.float)
 
-                losses, intermediates = model(data, return_intermediates=True, writeout=True)
+                outputs, intermediates = model(data, return_intermediates=True, writeout=True)
+                if "Zoom" in args.tasks:
+                    reconst, reconst_zoom = outputs
+                    
+                    fname=os.path.join(args.figures_save, 'zoom_{}.png'.format(filename[0]))
+                    save_image(fname, reconst_zoom)
+                else:
+                    reconst = outputs
+
+                fname=os.path.join(args.figures_save, 'recon_{}.png'.format(filename[0]))
+                logger.info(fname)
+                save_image(fname, reconst)
 
                 storage["bpp"].append(bpp.mean().item())
                 # update_performance(args, None, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, None, storage)
                 metrics['loss'] = None
                 metrics['cosine_ffx'] = None
-                update_performance(args, metrics, storage)
+                update_performance(args, metrics, storage, "jpegai")
 
-                # if idx % 100 == 0:
-                #     print_performance(args, len(val_loader), bpp.mean().item(), storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, idx, epoch, model.training)
+                print_performance(args, len(val_loader), metrics, idx, epoch, model.training)
 
             model.model_mode = ModelModes.TRAINING
         else:
@@ -214,6 +223,11 @@ def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "l
 
     return val_loss.avg, ssim_rec_val.avg, ssim_zoom_val.avg, cosine_ffx_val.avg
 
+def save_image(filename, reconst):
+    transform = transforms.ToPILImage()
+    image = transform(reconst.squeeze())
+    # Save the image
+    image.save(filename)
 
 
 def compare_params(initial_params, current_params):
@@ -248,6 +262,8 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
 
         model.load_checkpoint(args.checkpoint)
         model = model.to(device)
+
+        model.args.norm_loss = False
 
         logger.info("LFW evaluation")
         val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
@@ -413,7 +429,7 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
     return model, ckpt_path
 
 
-def update_performance(args, metrics, store):
+def update_performance(args, metrics, store, dataset = "lfw"):
 # def update_performance(args, loss, ssim_rec, ssim_zoom, psnr_rec, psnr_zoom, cosine_ffx, store):
 
     loss = metrics['loss']
@@ -423,40 +439,43 @@ def update_performance(args, metrics, store):
     psnr_zoom = metrics['psnr_zoom']
     cosine_ffx = metrics['cosine_ffx']
 
+    batch_size = args.batch_size
+    if dataset == "jpegai":
+        batch_size = 1
 
     if loss is not None:
-        loss.update(store["weighted_compression_loss"][-1], args.batch_size)
+        loss.update(store["weighted_compression_loss"][-1], batch_size)
 
     if args.default_task in args.tasks:
         ssim = store['perceptual rec'][-1]
-        ssim_rec.update(ssim, args.batch_size)
+        ssim_rec.update(ssim, batch_size)
 
         psnr = store['psnr rec'][-1]
-        psnr_rec.update(psnr, args.batch_size)
+        psnr_rec.update(psnr, batch_size)
 
-        metrics['compression_loss_sans_G'].update(store['compression_loss_sans_G'][-1], args.batch_size)
-        metrics['weighted_rate'].update(store['weighted_rate'][-1], args.batch_size)
-        metrics['perceptual'].update(store['perceptual'][-1], args.batch_size)
-        metrics['rate_penalty'].update(store['rate_penalty'][-1], args.batch_size)
+        metrics['compression_loss_sans_G'].update(store['compression_loss_sans_G'][-1], batch_size)
+        metrics['weighted_rate'].update(store['weighted_rate'][-1], batch_size)
+        metrics['perceptual'].update(store['perceptual'][-1], batch_size)
+        metrics['rate_penalty'].update(store['rate_penalty'][-1], batch_size)
 
-        metrics['bpp'].update(store['bpp'][-1], args.batch_size)
-        metrics['n_rate'].update(store['n_rate'][-1], args.batch_size)
-        metrics['q_rate'].update(store['q_rate'][-1], args.batch_size)
-        metrics['n_rate_latent'].update(store['n_rate_latent'][-1], args.batch_size)
-        metrics['q_rate_latent'].update(store['q_rate_latent'][-1], args.batch_size)
-        metrics['n_rate_hyperlatent'].update(store['n_rate_hyperlatent'][-1], args.batch_size)
-        metrics['q_rate_hyperlatent'].update(store['q_rate_hyperlatent'][-1], args.batch_size)
+        metrics['bpp'].update(store['bpp'][-1], batch_size)
+        metrics['n_rate'].update(store['n_rate'][-1], batch_size)
+        metrics['q_rate'].update(store['q_rate'][-1], batch_size)
+        metrics['n_rate_latent'].update(store['n_rate_latent'][-1], batch_size)
+        metrics['q_rate_latent'].update(store['q_rate_latent'][-1], batch_size)
+        metrics['n_rate_hyperlatent'].update(store['n_rate_hyperlatent'][-1], batch_size)
+        metrics['q_rate_hyperlatent'].update(store['q_rate_hyperlatent'][-1], batch_size)
 
     if "Zoom" in args.tasks or args.test_task:
         ssim = store['perceptual zoom'][-1]
-        ssim_zoom.update(ssim, args.batch_size)
+        ssim_zoom.update(ssim, batch_size)
 
         psnr = store['psnr zoom'][-1]
-        psnr_zoom.update(psnr, args.batch_size)
+        psnr_zoom.update(psnr, batch_size)
 
     if ("FFX" in args.tasks  or args.test_task) and cosine_ffx is not None :
         cosine = store['cosine sim'][-1]
-        cosine_ffx.update(cosine, args.batch_size)
+        cosine_ffx.update(cosine, batch_size)
 
 
 def print_performance(args, data_size, metrics, idx, epoch, training):
@@ -474,7 +493,8 @@ def print_performance(args, data_size, metrics, idx, epoch, training):
     else:
         display = '\nValidation: [{0}/{1}]'.format(idx, data_size)
 
-    display += '\tloss {loss.val:.3f} ({loss.avg:.3f})'.format(loss = loss)
+    if loss is not None:
+        display += '\tloss {loss.val:.3f} ({loss.avg:.3f})'.format(loss = loss)
 
     if args.default_task in args.tasks:
         display += '\tpsnr_rec {psnr_rec.val:.3f} ({psnr_rec.avg:.3f})\t ssim_rec {ssim_rec.val:.3f} ({ssim_rec.avg:.3f})'.format(psnr_rec = psnr_rec, ssim_rec = ssim_rec)
