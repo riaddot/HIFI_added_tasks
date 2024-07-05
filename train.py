@@ -189,7 +189,7 @@ def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "l
                 data = data.to(device, dtype=torch.float)
 
                 outputs, intermediates = model(data, return_intermediates=True, writeout=True)
-                if "Zoom" in args.tasks:
+                if "Zoom" in args.tasks or args.test_task:
                     reconst, reconst_zoom = outputs
                     
                     fname=os.path.join(args.figures_save, 'zoom_{}.png'.format(filename[0]))

@@ -241,13 +241,13 @@ class Model(nn.Module):
             self.Encoder = self.load_submodel(self.Encoder, checkpoint, False, sub_model="Encoder")
             self.Hyperprior = self.load_submodel(self.Hyperprior, checkpoint, False, sub_model="Hyperprior")
 
-        if "Zoom" in self.args.tasks:
+        if "Zoom" in self.args.tasks or self.args.test_task:
             self.logger.info("Loading Zoom pipeline")
             self.SuperDecoder = self.load_submodel(self.SuperDecoder, checkpoint, False, sub_model="SuperDecoder")
             self.SuperNet = self.load_submodel(self.SuperNet, checkpoint, False, sub_model="SuperNet")
             
 
-        if "FFX" in self.args.tasks:
+        if "FFX" in self.args.tasks or self.args.test_task:
             self.logger.info("Loading FFX pipeline")
             self.FaceDecoder = self.load_submodel(self.FaceDecoder, checkpoint, False, sub_model="FaceDecoder")
             self.MobFaceDecoder = self.load_submodel(self.MobFaceDecoder, checkpoint, False, sub_model="MobFaceDecoder")
@@ -666,13 +666,13 @@ class Model(nn.Module):
             if self.args.normalize_input_image is True:
                 # [-1.,1.] -> [0.,1.]
                 reconstruction = (reconstruction + 1.) / 2.
-                if "Zoom" in self.args.tasks:
+                if "Zoom" in self.args.tasks or self.args.test_task:
                     reconst_zoom = (reconst_zoom + 1.) / 2.
                     x_hr = (x_hr + 1.) / 2.
 
             reconstruction = torch.clamp(reconstruction, min=0., max=1.)
 
-            if "Zoom" in self.args.tasks:
+            if "Zoom" in self.args.tasks or self.args.test_task:
                 reconst_zoom = torch.clamp(reconst_zoom, min=0., max=1.)
 
                 zoom_loss = self.zoom_metric(x_hr, reconst_zoom)
