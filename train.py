@@ -220,8 +220,8 @@ def eval_lfw_jpegai(args, epoch, model, val_loader, device, writer, dataset = "l
     if writer is not None:
         # utils.log_summaries(args, writer, storage, val_loss, ssim_rec_val, ssim_zoom_val, psnr_rec_val, psnr_zoom_val, cosine_ffx_val, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
         utils.log_summaries(args, writer, metrics, epoch, mode = 'lfw', use_discriminator=model.use_discriminator)
-
-    return val_loss.avg, ssim_rec_val.avg, ssim_zoom_val.avg, cosine_ffx_val.avg
+        
+    return val_loss.avg, ssim_rec_val.avg, ssim_zoom_val.avg, cosine_ffx_val.avg, weighted_rate.avg
 
 def save_image(filename, reconst):
     transform = transforms.ToPILImage()
@@ -266,13 +266,13 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         model.args.norm_loss = False
 
         logger.info("LFW evaluation")
-        val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
+        val_loss, *_ = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
 
         logger.info("=" * 150)
         logger.info("\n")
 
         logger.info("JPEGAI evaluation")
-        val_loss, _, _, _ = eval_lfw_jpegai(args, 0, model, jpeg_loader, device, None, "jpegai")
+        val_loss, *_ = eval_lfw_jpegai(args, 0, model, jpeg_loader, device, None, "jpegai")
 
         logger.info("=" * 150)
         logger.info("\n")
@@ -281,13 +281,14 @@ def train(args, model, train_loader, val_loader, jpeg_loader, device, logger, op
         return
     
     if args.norm_loss:
-        val_loss, a, b, c = eval_lfw_jpegai(args, 0, model, val_loader, device, None)
+        val_loss, a, b, c, lambd = eval_lfw_jpegai(args, 0, model, val_loader, device, None, "lfw")
 
         model.a = a
         model.b = b
         model.c = c
+        model.lambd = lambd
 
-        logger.info("Loss normalizatin weights : a {}, b {}, c {}".format(a, b, c))
+        logger.info("Loss normalizatin weights : a {:.4f}, b {:.4f}, c {:.4f}, lambd {:.4f}".format(a, b, c, lambd))
 
 
     for epoch in trange(args.n_epochs, desc='Epoch'):

@@ -69,6 +69,7 @@ class Model(nn.Module):
             self.a = 1
             self.b = 1
             self.c = 1
+            self.lambd = 1
 
         if self.args.use_latent_mixture_model is True:
             self.args.latent_channels = self.args.latent_channels_DLMM
@@ -495,7 +496,11 @@ class Model(nn.Module):
         weighted_rate, rate_penalty = losses.weighted_rate_loss(self.args, total_nbpp=intermediates.n_bpp,
             total_qbpp=intermediates.q_bpp, step_counter=self.step_counter, ignore_schedule=self.args.ignore_schedule)
 
-        rec_compression_loss = perceptual_loss + weighted_rate
+        if self.args.norm_loss:
+            weighted_rate /= self.lambd
+            rec_compression_loss = perceptual_loss / self.a + weighted_rate
+        else:
+            rec_compression_loss = perceptual_loss + weighted_rate
         # weighted_R_D_loss = weighted_rate + weighted_distortion
         # weighted_compression_loss = weighted_R_D_loss + weighted_perceptual
 
