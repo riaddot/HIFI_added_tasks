@@ -25,13 +25,13 @@ class Datasets(object):
     JETS = 'jetimages'
 
 class DatasetPaths(object):
-    LFWPeople = "/home/sidahmed/datapart/lfw" #'/home/bellelbn/DL/datasets/lfw'
+    LFWPeople = r"C:\Users\TEMMMAR\Desktop\Hifi_local\high-fidelity-generative_compression\high-fidelity-generative-compression\lfw" #'/home/bellelbn/DL/datasets/lfw'
     OPENIMAGES = 'data/openimages'
     CITYSCAPES = ''
     JETS = ''
 
 class directories(object):
-    experiments = '/home/sidahmed/datapart/jpegai_experiments/experiments'
+    experiments = r'C:\Users\TEMMMAR\Desktop\Hifi_local\high-fidelity-generative_compression\high-fidelity-generative-compression'
     baseline_experiments = os.path.join(experiments, "baseline")
 
 class args(object):
@@ -42,7 +42,7 @@ class args(object):
     silent = True
     n_epochs = 80
     n_steps = 1e6
-    batch_size = 32
+    batch_size = 2
     log_interval = 100
     save_interval = 50000
     gpu = 0
@@ -61,6 +61,7 @@ class args(object):
     latent_channels = 220
     n_residual_blocks = 9           # Authors use 9 blocks, performance saturates at 5
     lambda_B = 2**(-4)              # Loose rate
+    lambda_C = 2**(0)              # mid rate
     k_M = 0.075 * 2**(-5)           # Distortion
     k_P = 1.                        # Perceptual loss
     beta = 0.15                     # Generator loss
@@ -97,9 +98,9 @@ class args(object):
     latent_channels_DLMM = 64
     
     default_task = "HiFiC"
-    image_dir = "/home/sidahmed/datapart/jpegai_test"
-    checkpoint = "/home/sidahmed/datapart/models/hific_hi.pt"
-    hific_checkpoint = "/home/sidahmed/datapart/models/hific_hi.pt"
+    image_dir = r"C:\Users\TEMMMAR\Desktop\Hifi_local\j16"
+    checkpoint = r"C:\Users\TEMMMAR\Desktop\Hifi_local\Chekpoint\hific-high.pt"
+    hific_checkpoint = r"C:\Users\TEMMMAR\Desktop\Hifi_local\Chekpoint\hific-high.pt"
 
     hific_zoom = "/home/sidahmed/datapart/jpegai_experiments/experiments/lfw_compression_ln_2024_07_03_21_50/HiFiC_Zoom"
     hific_ffx = "/home/sidahmed/datapart/jpegai_experiments/experiments/lfw_compression_ln_2024_07_03_12_44/HiFiC_FFX"
