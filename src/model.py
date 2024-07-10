@@ -494,11 +494,11 @@ class Model(nn.Module):
         # weighted_perceptual = self.args.k_P * perceptual_loss
 
         weighted_rate, rate_penalty = losses.weighted_rate_loss(self.args, total_nbpp=intermediates.n_bpp,
-            total_qbpp=intermediates.q_bpp, step_counter=self.step_counter, ignore_schedule=self.args.ignore_schedule)
+            total_qbpp=intermediates.q_bpp, step_counter=self.step_counter, perceptual_loss=perceptual_loss, ignore_schedule=self.args.ignore_schedule)
 
         if self.args.norm_loss:
             weighted_rate /= self.lambd
-            rec_compression_loss = perceptual_loss / self.a + weighted_rate
+            rec_compression_loss = perceptual_loss / self.a + 1.25*weighted_rate
         else:
             rec_compression_loss = perceptual_loss + weighted_rate
         # weighted_R_D_loss = weighted_rate + weighted_distortion
