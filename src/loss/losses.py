@@ -5,13 +5,14 @@ import numpy as np
 
 from src.helpers.utils import get_scheduled_params
 
-def weighted_rate_loss(config, total_nbpp, total_qbpp, step_counter, ignore_schedule=False):
+def weighted_rate_loss(config, total_nbpp, total_qbpp, step_counter, perceptual_loss, ignore_schedule=False):
     """
     Heavily penalize the rate with weight lambda_A >> lambda_B if it exceeds 
     some target r_t, otherwise penalize with lambda_B
     """
     lambda_A = get_scheduled_params(config.lambda_A, config.lambda_schedule, step_counter, ignore_schedule)
     lambda_B = get_scheduled_params(config.lambda_B, config.lambda_schedule, step_counter, ignore_schedule)
+    lambda_C = get_scheduled_params(config.lambda_C, config.lambda_schedule, step_counter, ignore_schedule)
 
     assert lambda_A > lambda_B, "Expected lambda_A > lambda_B, got (A) {} <= (B) {}".format(
         lambda_A, lambda_B)
@@ -22,7 +23,11 @@ def weighted_rate_loss(config, total_nbpp, total_qbpp, step_counter, ignore_sche
     if total_qbpp > target_bpp:
         rate_penalty = lambda_A
     else:
-        rate_penalty = lambda_B
+        if perceptual_loss > 0.9 : 
+            rate_penalty = lambda_C 
+        else: 
+            rate_penalty = lambda_B 
+
     weighted_rate = rate_penalty * total_nbpp
 
     return weighted_rate, float(rate_penalty)
