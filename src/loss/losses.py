@@ -13,6 +13,8 @@ def weighted_rate_loss(config, total_nbpp, total_qbpp, step_counter, ignore_sche
     lambda_A = get_scheduled_params(config.lambda_A, config.lambda_schedule, step_counter, ignore_schedule)
     lambda_B = get_scheduled_params(config.lambda_B, config.lambda_schedule, step_counter, ignore_schedule)
 
+    # boost = get_scheduled_params(config.boost_compression, config.lambda_schedule, step_counter, ignore_schedule)
+
     assert lambda_A > lambda_B, "Expected lambda_A > lambda_B, got (A) {} <= (B) {}".format(
         lambda_A, lambda_B)
 
@@ -20,9 +22,16 @@ def weighted_rate_loss(config, total_nbpp, total_qbpp, step_counter, ignore_sche
 
     total_qbpp = total_qbpp.item()
     if total_qbpp > target_bpp:
-        rate_penalty = lambda_A
+        if config.adaptative == "linear":
+            rate_penalty = config.boost_compression * (1 + (total_qbpp - target_bpp)) 
+        elif config.adaptative == "exp":
+            rate_penalty = np.exp(1 + total_qbpp - target_bpp)
+        else:
+            rate_penalty = lambda_A
+
     else:
         rate_penalty = lambda_B
+
     weighted_rate = rate_penalty * total_nbpp
 
     return weighted_rate, float(rate_penalty)
