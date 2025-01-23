@@ -23,17 +23,15 @@ class Datasets(object):
     OPENIMAGES = 'openimages'
     CITYSCAPES = 'cityscapes'
     JETS = 'jetimages'
-    FaceForensicsDataset = "ff++"
 
 class DatasetPaths(object):
-    LFWPeople = "/home/bellelbn/DL/datasets/lfw" #'/home/bellelbn/DL/datasets/lfw'
-    OPENIMAGES = '/home/bellelbn/DL/datasets/OID'
+    LFWPeople = "/home/sidahmed/datapart/lfw" #'/home/bellelbn/DL/datasets/lfw'
+    OPENIMAGES = 'data/openimages'
     CITYSCAPES = ''
     JETS = ''
-    FaceForensicsDataset = "/home/bellelbn/DL/datasets/Faceforensics"
 
 class directories(object):
-    experiments = '/home/bellelbn/DL/datapart/jpegai_experiments/experiments'
+    experiments = '/home/sidahmed/datapart/jpegai_experiments/experiments'
     baseline_experiments = os.path.join(experiments, "baseline")
 
 class args(object):
@@ -42,21 +40,16 @@ class args(object):
     """
     name = 'hific_v0.1'
     silent = True
-    n_epochs = 40
+    n_epochs = 80
     n_steps = 1e6
     batch_size = 32
-    boost_compression = 3
     log_interval = 100
     save_interval = 50000
     gpu = 0
     multigpu = True
-    dataset = Datasets.FaceForensicsDataset #OPENIMAGES
-    dataset_path = DatasetPaths.FaceForensicsDataset #OPENIMAGES
+    dataset = Datasets.LFWPeople #Datasets.OPENIMAGES
+    dataset_path = DatasetPaths.LFWPeople #DatasetPaths.OPENIMAGES
     shuffle = True
-    
-    fake_type = None
-    dataset_type = 'original'
-    nframes = 32
 
     # GAN params
     discriminator_steps = 0
@@ -81,7 +74,7 @@ class args(object):
     latent_dims = (latent_channels,16,16)
     
     # Optimizer params
-    learning_rate = 5e-5
+    learning_rate = 1e-4
     weight_decay = 1e-6
 
     # Scheduling
@@ -98,39 +91,18 @@ class args(object):
     target_rate = target_rate_map[regime]
     lambda_A = lambda_A_map[regime]
 
-    double_compression = 1
-
-    dataset_type = "original"
-    nframes = 32
-    
     # DLMM
     use_latent_mixture_model = False
     mixture_components = 4
     latent_channels_DLMM = 64
     
     default_task = "HiFiC"
-    image_dir = "/home/bellelbn/DL/datasets/jpegai_test"
-    checkpoint = "/home/bellelbn/DL/datapart/models/hific_hi.pt"
+    image_dir = "/home/sidahmed/datapart/jpegai_test"
+    checkpoint = "/home/sidahmed/datapart/models/hific_hi.pt"
+    hific_checkpoint = "/home/sidahmed/datapart/models/hific_hi.pt"
 
-    hific_hi_checkpoint = "/home/bellelbn/DL/datapart/models/hific_hi.pt"
-    hific_med_checkpoint = "/home/bellelbn/DL/datapart/models/hific_mi.pt"
-    hific_low_checkpoint = "/home/bellelbn/DL/datapart/models/hific_low.pt"
-
-    hific_zoom = "/home/bellelbn/DL/datapart/jpegai_experiments/experiments/lfw_compression_high_adapt_linear_origW_2024_09_07_02_12/HiFiC_Zoom"
-    hific_ffx = "/home/bellelbn/DL/datapart/jpegai_experiments/experiments/lfw_compression_high_adapt_linear_origW_2024_09_07_17_04/HiFiC_FFX"
-    
-    # all these checkpoints are obtained from a HiFiC Hi codec targeting different bpp
-#     checkpoint_paths_for_pruning = {
-#     "encoder_0.45_bpp": "/home/bellelbn/DL/datapart/jpegai_experiments/experiments/lfw_compression_ln_adapt_linear_origW_2024_08_13_12_16/HiFiC_Zoom_FFX/best_checkpoint.pt",
-#     "encoder_0.30_bpp": "/home/bellelbn/DL/datapart/jpegai_experiments/experiments/lfw_compression_med_adapt_linear_origW_2024_09_11_22_41/HiFiC_Zoom_FFX/best_checkpoint.pt",
-#     "encoder_0.14_bpp": "/home/bellelbn/DL/datapart/jpegai_experiments/experiments/lfw_compression_low_adapt_linear_origW_2024_09_11_22_41/HiFiC_Zoom_FFX/best_checkpoint.pt"
-# }
-    
-    checkpoint_paths_for_pruning = {
-    "encoder_0.45_bpp": hific_hi_checkpoint,
-    # "encoder_0.30_bpp": hific_med_checkpoint,
-    # "encoder_0.14_bpp": hific_low_checkpoint
-}
+    hific_zoom = "/home/sidahmed/datapart/jpegai_experiments/experiments/lfw_compression_ln_2024_07_03_21_50/HiFiC_Zoom"
+    hific_ffx = "/home/sidahmed/datapart/jpegai_experiments/experiments/lfw_compression_ln_2024_07_03_12_44/HiFiC_FFX"
     
 """
 Specialized configs

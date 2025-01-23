@@ -21,15 +21,11 @@ from torchvision.datasets.vision import VisionDataset
 DIR = os.path.abspath(os.path.dirname(__file__))
 COLOUR_BLACK = 0
 COLOUR_WHITE = 1
-NUM_DATASET_WORKERS = 4
+NUM_DATASET_WORKERS = 16
 SCALE_MIN = 0.75
 SCALE_MAX = 0.95
-DATASETS_DICT = {"lfw": "LFWPeople", 
-                 "ff++": "FaceForensicsDataset",
-                 "openimages": "OpenImages", 
-                 "cityscapes": "CityScapes", 
-                 "jetimages": "JetImages", 
-                 "evaluation": "Evaluation"}
+DATASETS_DICT = {"lfw": "LFWPeople", "openimages": "OpenImages", "cityscapes": "CityScapes", 
+                 "jetimages": "JetImages", "evaluation": "Evaluation"}
 DATASETS = list(DATASETS_DICT.keys())
 
 def get_dataset(dataset):
@@ -53,76 +49,28 @@ def exception_collate_fn(batch):
     batch = list(filter(lambda x: x is not None, batch))
     return torch.utils.data.dataloader.default_collate(batch)
 
-# def get_dataloaders(dataset, split='train', root=None, shuffle=True, pin_memory=True, 
-#                     batch_size=8, logger=logging.getLogger(__name__), normalize=False, **kwargs):
-#     """A generic data loader
-
-#     Parameters
-#     ----------
-#     dataset : {"openimages", "jetimages", "evaluation"}
-#         Name of the dataset to load
-
-#     root : str
-#         Path to the dataset root. If `None` uses the default one.
-
-#     kwargs :
-#         Additional arguments to `DataLoader`. Default values are modified.
-#     """
-#     pin_memory = pin_memory and torch.cuda.is_available  # only pin if GPU available
-#     Dataset = get_dataset(dataset)
-
-#     if root is None:
-#         dataset = Dataset(logger=logger, split=split, normalize=normalize, **kwargs)
-#     else:
-#         dataset = Dataset(root=root, logger=logger, split=split, normalize=normalize, **kwargs)
-
-#     return DataLoader(dataset,
-#                       batch_size=batch_size,
-#                       shuffle=shuffle,
-#                       num_workers=NUM_DATASET_WORKERS,
-#                       collate_fn=exception_collate_fn,
-#                       pin_memory=pin_memory)
-
-
 def get_dataloaders(dataset, split='train', root=None, shuffle=True, pin_memory=True, 
-                    batch_size=8, logger=logging.getLogger(__name__), normalize=False, 
-                    dataset_type='original', fake_type=None, **kwargs):
+                    batch_size=8, logger=logging.getLogger(__name__), normalize=False, **kwargs):
     """A generic data loader
 
     Parameters
     ----------
-    dataset : {"openimages", "jetimages", "evaluation", "ff++"}
+    dataset : {"openimages", "jetimages", "evaluation"}
         Name of the dataset to load
 
-    split : str, optional (default='train')
-        Dataset split, e.g., 'train', 'validation', etc.
+    root : str
+        Path to the dataset root. If `None` uses the default one.
 
-    root : str, optional
-        Path to the dataset root. If `None`, uses the default one.
-
-    dataset_type : {'original', 'fake'}, optional (default='original')
-        Type of FaceForensics dataset to load ('original' or 'fake').
-
-    fake_type : str, optional
-        For fake data, specify the manipulation type, e.g., 'Face2Face', 'FaceShifter', 'FaceSwap'.
-
-    kwargs : additional arguments to `DataLoader`. Default values are modified.
+    kwargs :
+        Additional arguments to `DataLoader`. Default values are modified.
     """
-    pin_memory = pin_memory and torch.cuda.is_available()  # only pin if GPU available
+    pin_memory = pin_memory and torch.cuda.is_available  # only pin if GPU available
     Dataset = get_dataset(dataset)
 
-    if dataset.lower() == "ff++":  # If dataset is 'ff++', load the FaceForensics dataset
-        if root is None:
-            dataset = Dataset(logger=logger, normalize=normalize, 
-                              dataset_type=dataset_type, fake_type=fake_type, **kwargs)
-        else:
-            dataset = Dataset(root=root, logger=logger, normalize=normalize, 
-                              dataset_type=dataset_type, fake_type=fake_type, **kwargs)
-    else:  # For other datasets like openimages, jetimages, etc.
-        if root is None:
-            dataset = Dataset(logger=logger, split=split, normalize=normalize, **kwargs)
-        else:
-            dataset = Dataset(root=root, logger=logger, split=split, normalize=normalize, **kwargs)
+    if root is None:
+        dataset = Dataset(logger=logger, split=split, normalize=normalize, **kwargs)
+    else:
+        dataset = Dataset(root=root, logger=logger, split=split, normalize=normalize, **kwargs)
 
     return DataLoader(dataset,
                       batch_size=batch_size,
@@ -144,7 +92,7 @@ class BaseDataset(Dataset, abc.ABC):
         List of `torch.vision.transforms` to apply to the data when loading it.
     """
 
-    def __init__(self, root, transforms_list=[], split='train', logger=logging.getLogger(__name__),
+    def __init__(self, root, transforms_list=[], mode='train', logger=logging.getLogger(__name__),
          **kwargs):
         self.root = root
         
@@ -248,21 +196,21 @@ class OpenImages(BaseDataset):
     [1] https://storage.googleapis.com/openimages/web/factsfigures.html
 
     """
-    files = {"train": "train", "test": "test", "val": "val"}
+    files = {"train": "train", "test": "test", "val": "validation"}
 
-    def __init__(self, root=os.path.join(DIR, 'data/openimages'), split='train', crop_size=256, 
+    def __init__(self, root=os.path.join(DIR, 'data/openimages'), mode='train', crop_size=256, 
         normalize=False, **kwargs):
         super().__init__(root, [transforms.ToTensor()], **kwargs)
 
-        if split == 'train':
+        if mode == 'train':
             data_dir = self.train_data
-        elif split == 'val':
+        elif mode == 'validation':
             data_dir = self.val_data
         else:
-            raise ValueError('Unknown split mode!')
+            raise ValueError('Unknown mode!')
 
-        self.imgs = glob.glob(os.path.join(data_dir, '*/*.jpg'))
-        self.imgs += glob.glob(os.path.join(data_dir, '*/*.png'))
+        self.imgs = glob.glob(os.path.join(data_dir, '*.jpg'))
+        self.imgs += glob.glob(os.path.join(data_dir, '*.png'))
 
         self.crop_size = crop_size
         self.image_dims = (3, self.crop_size, self.crop_size)
@@ -325,7 +273,6 @@ class OpenImages(BaseDataset):
         # apply random scaling + crop, put each pixel 
         # in [0.,1.] and reshape to (C x H x W)
         return transformed, bpp
-    
 
 class CityScapes(datasets.Cityscapes):
     """CityScapes wrapper. Docs: `datasets.Cityscapes.`"""
@@ -391,86 +338,7 @@ def preprocess(root, size=(64, 64), img_format='JPEG', center_crop=None):
         img.save(img_path, img_format)
 
 
-
-class FaceForensicsDataset(Dataset):
-    """
-    Custom dataset class to load FaceForensics frames, including labels for real (0) and fake (1) images.
-    """
-    def __init__(self, root, dataset_type, logger=None, frames='32', fake_type=None, transform=None, normalize=True):
-        """
-        Args:
-            root (str): Path to the root directory containing original and fake frames.
-            dataset_type (str): 'original' or 'fake'. Specifies the type of dataset.
-            frames (str): Number of frames per video. Can be '32' or '192'.
-            fake_type (str, optional): For fake data, specify the manipulation type,
-                                       e.g., 'Face2Face', 'FaceShifter', 'FaceSwap'.
-            transform (callable, optional): A function/transform to apply to the frames.
-            normalize (bool): Whether to normalize the image tensors to [-1, 1].
-        """
-        self.root = root
-        self.dataset_type = dataset_type
-        self.frames = frames
-        self.fake_type = fake_type
-        self.transform = transform
-        self.normalize = normalize
-
-        self.image_dims = (3, 256, 256)
-        # self.img_size = (3, 32, 32)
-
-        # Define paths based on dataset type
-        if self.dataset_type == 'original':
-            self.data_path = os.path.join(self.root, f'original_sequences/youtube/raw/nframes_{self.frames}')
-            self.label = 0  # Label for real images
-        elif self.dataset_type == 'fake':
-            if self.fake_type is None:
-                raise ValueError("For fake data, 'fake_type' must be specified.")
-            self.data_path = os.path.join(self.root, f'manipulated_sequences/{self.fake_type}/raw/nframes_{self.frames}')
-            self.label = 1  # Label for fake images
-        else:
-            raise ValueError("dataset_type must be 'original' or 'fake'.")
-
-        print("load data from", self.data_path)
-        # Collect all image paths from all folders
-        self.image_paths = sorted(glob.glob(os.path.join(self.data_path, '*/*.png')))
         
-        print("N images:", len(self.image_paths))
-
-        if len(self.image_paths) == 0:
-            raise ValueError(f"No images found in {self.data_path}")
-
-    def _transforms(self):
-        """
-        Defines the image transformations.
-        """
-        transforms_list = [transforms.ToTensor(),
-                           transforms.Resize((256, 256))]
-
-        if self.normalize:
-            transforms_list += [transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5))]
-
-        return transforms.Compose(transforms_list)
-
-    def __len__(self):
-        return len(self.image_paths)
-
-    def __getitem__(self, idx):
-        # Load a single image
-        image_path = self.image_paths[idx]
-        image = Image.open(image_path).convert('RGB')
-        filesize = os.path.getsize(image_path)
-        W, H = image.size  # Image dimensions
-        bpp = filesize * 8. / (H * W)  # Calculate bits-per-pixel (optional)
-
-        # Apply transforms
-        transform = self._transforms()
-        image = transform(image)
-
-        # Return image, label, and optional metadata
-        # return image, self.label, bpp, image_path
-        return image, bpp
-
-
-
 class _LFW(VisionDataset):
 
     base_folder = "lfw-py"
@@ -631,7 +499,7 @@ class LFWPeople(_LFW):
         transforms_list = [transforms.Resize((256, 256)),
                            transforms.ToTensor()]
         
-        if self.split == "train":
+        if self.split is "train":
             transforms_list += [transforms.RandomHorizontalFlip()]
 
         if self.normalize is True:

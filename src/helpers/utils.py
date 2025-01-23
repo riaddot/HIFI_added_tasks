@@ -115,45 +115,26 @@ def setup_generic_signature(args, special_info):
         args.name = '{}_{}_{}_{}'.format(args.name, args.dataset, special_info, time_signature)
     else:
         name = [args.dataset, special_info]
-        
-        if args.dataset == "ff++":
-            
-            name.append(args.dataset_type)
-
-
-        name.append(args.regime)
         if args.norm_loss:
             name.append("ln")
         if args.test_task:
             name.append("test_task")
-        if args.auto_norm:
-            name.append("auto_norm")
-        if args.target_rate_loss:
-            name.append("target_rate")
-        if args.adaptative:
-            name.append("adapt_{}".format(args.adaptative))
-
-        if args.prune:
-            name.append("Pruning_{:.2f}".format(args.pruning_ratio))
-
-            name.append("Crit_{}".format(args.criteria))
-            if args.criteria == "ccfp":
-                name.append("angle-th {}".format(args.angle))
-
-        
-
-        if args.evaluate is not None:
-            name.append("Eval")
-
-        name.append("dc_{}".format(args.double_compression))
         
         name.append(time_signature)
 
-        
         name = "_".join(name)
         args.name = name #'{}_{}_{}'.format(args.dataset, special_info, time_signature)
 
 
+    if args.default_task in args.tasks:
+        print(args.name)
+        args.snapshot = os.path.join(directories.experiments, args.name)
+    else:
+        
+        args.snapshot = directories.baseline_experiments
+        if os.path.exists(args.snapshot):
+            raise FileExistsError(f"Baseline already exists: {args.snapshot}")
+        
 
     checkpoint_folder = []
     # Append the relevant strings to the list if their corresponding tasks are present
@@ -164,24 +145,9 @@ def setup_generic_signature(args, special_info):
     if "FFX" in args.tasks:
         checkpoint_folder.append("FFX")
 
-
     # Join the components with underscores to form the final folder name
     checkpoint_folder = "_".join(checkpoint_folder)
 
-    if args.default_task in args.tasks:
-        print(args.name)
-        args.snapshot = os.path.join(directories.experiments, args.name)
-    else:
-        args.snapshot = directories.baseline_experiments
-
-        args.snapshot += "_{}".format(args.regime)
-
-        if args.adaptative:
-            args.snapshot += "_{}".format(args.adaptative)
-            
-
-        if os.path.exists(args.snapshot):
-            raise FileExistsError(f"Baseline already exists: {args.snapshot}")
 
     args.checkpoints_save = os.path.join(args.snapshot, checkpoint_folder)
     args.figures_save = os.path.join(args.snapshot, 'figures')
@@ -410,13 +376,8 @@ def log_summaries(args, writer, metrics, step, mode, use_discriminator=False):
     if args.default_task in args.tasks:
         weighted_compression_scalars = ['compression_loss_sans_G',
                                         'weighted_rate',
-                                        'perceptual']
-
-        if args.auto_norm:
-            weighted_compression_scalars.append('gamma1')
-            weighted_compression_scalars.append('gamma2')
-        else:
-            weighted_compression_scalars.append('rate_penalty')
+                                        'perceptual',
+                                        'rate_penalty']
 
         compression_scalars = ['n_rate', 'q_rate', 'n_rate_latent' ,'q_rate_latent', 
             'n_rate_hyperlatent', 'q_rate_hyperlatent', 'perceptual']
@@ -429,7 +390,7 @@ def log_summaries(args, writer, metrics, step, mode, use_discriminator=False):
 
         for scalar in weighted_compression_scalars:
             writer.add_scalar('weighted_compression/{}'.format(scalar), metrics[scalar].avg, step)
-        
+
         for scalar in compression_scalars:
             writer.add_scalar('compression/{}'.format(scalar), metrics[scalar].avg, step)
 
